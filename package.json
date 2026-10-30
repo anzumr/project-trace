@@ -1,0 +1,29 @@
+{
+  "name": "project-trace",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && npm run build -w @trace/client && node scripts/compress.mjs",
+    "test": "tsx --test packages/shared/src/*.test.ts apps/server/src/*.test.ts apps/client/src/ui/*.test.ts",
+    "start:server": "npm run start -w @trace/server",
+    "start": "node --import tsx apps/server/src/production.ts",
+    "benchmark": "node --import tsx scripts/benchmark.ts",
+    "test:production": "node --import tsx scripts/production-smoke.ts",
+    "test:browser": "node --import tsx scripts/browser-matchmaking.ts",
+    "benchmark:addon": "node --import tsx scripts/addon-benchmark.ts",
+    "check:persistence": "node --import tsx scripts/check-persistence.ts"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.12",
+    "@types/node": "^24.0.0",
+    "playwright-core": "^1.64.1",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3"
+  }
+}
