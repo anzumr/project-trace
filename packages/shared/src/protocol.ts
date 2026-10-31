@@ -2,7 +2,8 @@ import type { CombatStats, RoundCombat } from './combat';
 import type { ModeId } from './modes';
 import type { Body, Input } from './index';
 
-export type PlayerInput = Input & { seq: number; pitch: number; firing: boolean; active: boolean };
+/** `view` is the server tick at which the client drew the opponent, used to rewind the shot target. */
+export type PlayerInput = Input & { seq: number; pitch: number; firing: boolean; active: boolean; view?: number };
 export type PlayerState = { roundStats?: CombatStats; matchStats?: CombatStats; kills?: number; maxHp?: number; bot?: boolean; connected?: boolean; registered?: boolean; id: string; name: string; wins: number; body: Body; yaw: number; pitch: number; hp: number; ready: boolean; ack: number; hit: boolean; headshot: boolean; damage: number; trackingSeconds: number; firingSeconds: number };
 export type QueueState = { state: 'idle' | 'searching' | 'reconnecting'; elapsedMs: number; botEligible: boolean; mode?: ModeId; serverTime: number };
 export type ActionReply = { ok: boolean; error?: string };
@@ -32,5 +33,6 @@ export function validateInput(value: unknown): value is PlayerInput {
     && ['forward', 'strafe'].every(k => typeof v[k] === 'number' && Number.isFinite(v[k]) && Math.abs(v[k] as number) <= 1)
     && typeof v.yaw === 'number' && Number.isFinite(v.yaw) && Math.abs(v.yaw) <= Math.PI * 2
     && typeof v.pitch === 'number' && Number.isFinite(v.pitch) && Math.abs(v.pitch) <= Math.PI / 2
-    && ['jump', 'firing', 'active'].every(k => typeof v[k] === 'boolean');
+    && ['jump', 'firing', 'active'].every(k => typeof v[k] === 'boolean')
+    && (v.view === undefined || (typeof v.view === 'number' && Number.isFinite(v.view) && v.view >= 0));
 }

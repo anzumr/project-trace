@@ -24,6 +24,8 @@ export class Network {
     });
     if(changed && userId) { try { if(sessionStorage.getItem('trace.public')===userId)void this.connect().catch(e=>this.error(e.message)); } catch { /* Private browser storage. */ } }
   }
+  /** Server tick of the opponent position most recently drawn; sent with input for shot rewind. */
+  viewTick: number | undefined;
   get snapshotAge() { return this.snapshot ? performance.now()-this.received : 0; }
   private pingTimer: ReturnType<typeof setInterval>;
   constructor(private update: (state: Snapshot | null) => void, private error: (message: string) => void, private apply: (state: Snapshot) => void, private onQueue: (state: QueueState)=>void = ()=>{}) {
@@ -83,17 +85,18 @@ export class Network {
   ready() { if (this.snapshot) this.socket.emit('ready', this.snapshot.modeRevision); }
   selectMode(mode: ModeId) { this.socket.emit('selectMode', mode); }
   leave() { this.socket.emit('leave'); this.rememberPublic(false); this.clear(); }
-  private clear() { this.snapshot = null; this.seat = undefined; this.samples = []; this.update(null); }
+  private clear() { this.viewTick = undefined; this.snapshot = null; this.seat = undefined; this.samples = []; this.update(null); }
   remote(now: number) {
     const id = this.id, latest = this.snapshot?.players.find(p => p.id !== id); if (!latest) return null;
     const time = now - 100;
     const valid = this.samples.filter(s => s.snapshot.match === this.snapshot?.match && s.snapshot.roundSerial === this.snapshot?.roundSerial);
     let a = valid[0], b = valid[valid.length - 1];
-    if (!a || !b) return latest;
+    if (!a || !b) { this.viewTick = this.snapshot?.tick; return latest; }
     for (let i = 1; i < valid.length; i++) { if (valid[i].received >= time) { a = valid[i - 1]; b = valid[i]; break; } }
     const from = a.snapshot.players.find(p => p.id !== id), to = b.snapshot.players.find(p => p.id !== id);
-    if (!from || !to) return latest;
+    if (!from || !to) { this.viewTick = this.snapshot?.tick; return latest; }
     const t = Math.max(0, Math.min(1, (time - a.received) / Math.max(1, b.received - a.received)));
+    this.viewTick = a.snapshot.tick + (b.snapshot.tick - a.snapshot.tick) * t;
     return { ...latest, body: { ...latest.body, x: from.body.x + (to.body.x - from.body.x) * t, y: from.body.y + (to.body.y - from.body.y) * t, z: from.body.z + (to.body.z - from.body.z) * t } };
   }
   dispose() { clearInterval(this.pingTimer); this.socket.removeAllListeners(); this.socket.disconnect(); }

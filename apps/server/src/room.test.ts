@@ -123,3 +123,23 @@ test('multiplayer capsule and gray head use exact regions with 2x head damage in
     room.step(now);assert.ok(Math.abs(b.state.hp-60)<1e-8);assert.equal(a.state.hit,false);assert.equal(a.state.headshot,false);
   }
 });
+test('shots rewind a strafing target to the tick the shooter saw, within the rewind limit', () => {
+  const room = live(), a = room.players.get('a')!, b = room.players.get('b')!;
+  a.state.body.x = b.state.body.x = 5;
+  const seen: { tick: number; x: number; y: number; z: number }[] = [];
+  let now = 1000;
+  for (let seq = 1; seq <= 40; seq++) { room.accept("b", { ...neutralInput(seq), active: true, strafe: seq <= 20 ? -1 : 1 }, now); room.step(now += 17); seen.push({ tick: room.tick, ...b.state.body }); }
+  const aim = (target: { x: number; y: number; z: number }) => { const dx = target.x - a.state.body.x, dy = target.y + 0.8 - a.state.body.y - CONFIG.eyeHeight, dz = target.z - a.state.body.z; return { yaw: Math.atan2(-dx, -dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) }; };
+  const old = seen[seen.length - 7];
+  room.accept('b', { ...neutralInput(41), active: true, strafe: 1 }, now);
+  room.accept('a', { ...neutralInput(1), active: true, firing: true, ...aim(old) }, now); room.step(now += 17);
+  assert.equal(b.state.hp, 100, 'without a view tick the lagged aim misses the current position');
+  room.accept('b', { ...neutralInput(42), active: true, strafe: 1 }, now);
+  room.accept('a', { ...neutralInput(2), active: true, firing: true, view: old.tick, ...aim(old) }, now); room.step(now += 17);
+  assert.ok(b.state.hp < 100, 'aim at the rendered position registers');
+  const hp = b.state.hp;
+  room.accept('b', { ...neutralInput(43), active: true, strafe: 1 }, now);
+  room.accept('a', { ...neutralInput(3), active: true, firing: true, view: seen[0].tick, ...aim(seen[0]) }, now); room.step(now += 17);
+  assert.equal(b.state.hp, hp, 'rewind beyond the limit is clamped');
+  assert.equal(room.accept('a', { ...neutralInput(4), active: true, view: NaN }, now), false);
+});

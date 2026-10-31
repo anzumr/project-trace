@@ -150,7 +150,7 @@ export class Engine {
   private contextLost = (event: Event) => { event.preventDefault();this.blur();this.onError('Graphics context lost. Reload the page to restore the arena.'); };
   private direction = new THREE.Vector3();
   private input(active: boolean): PlayerInput {
-    return { seq: ++this.seq, forward: active ? Number(this.keys.has('KeyW')) - Number(this.keys.has('KeyS')) : 0, strafe: active ? Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA')) : 0, jump: active && this.jump, yaw: Math.atan2(Math.sin(this.yaw), Math.cos(this.yaw)), pitch: this.pitch, firing: active && this.firing, active };
+    return { seq: ++this.seq, forward: active ? Number(this.keys.has('KeyW')) - Number(this.keys.has('KeyS')) : 0, strafe: active ? Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA')) : 0, jump: active && this.jump, yaw: Math.atan2(Math.sin(this.yaw), Math.cos(this.yaw)), pitch: this.pitch, firing: active && this.firing, active, view: this.network.viewTick };
   }
   private loop = (now: number) => {
     if (this.disposed) return;
