@@ -1,0 +1,36 @@
+{
+  "scope": "Headless Chrome, 1440x1000 viewport, competitive graphics, 0.5 render scale, 60 FPS cap. Automated run; not a 240 FPS claim or physical audio-output test.",
+  "frames": {
+    "averageMs": 16.711166666666667,
+    "p95Ms": 16.80000000000291,
+    "p99Ms": 16.900000000001455,
+    "cpuMs": 0.598166666670392,
+    "samples": 1200
+  },
+  "audioBuffers": [
+    {
+      "name": "hit",
+      "duration": 0.5,
+      "channels": 1,
+      "sampleRate": 48000
+    },
+    {
+      "name": "headshot",
+      "duration": 0.14183333333333334,
+      "channels": 2,
+      "sampleRate": 48000
+    },
+    {
+      "name": "kill",
+      "duration": 0.174375,
+      "channels": 2,
+      "sampleRate": 48000
+    },
+    {
+      "name": "spawn",
+      "duration": 1.0500625,
+      "channels": 1,
+      "sampleRate": 48000
+    }
+  ]
+}

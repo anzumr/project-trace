@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
-import { mkdtemp, readFile, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -47,13 +47,13 @@ try{
     console.log('Live mode: temporary QA accounts authenticated and usernames claimed. Credentials are kept in memory.');
   }else{
   await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key,email_confirmed_at timestamptz);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;`);
-  for(const name of ['202610270001_accounts.sql','202610280001_match_results.sql'])await db.exec(await readFile(resolve('supabase/migrations',name),'utf8'));
+  for(const name of ['202610270001_accounts.sql','202610280001_match_results.sql','202610310001_combat_stats.sql'])await db.exec(await readFile(resolve('supabase/migrations',name),'utf8'));
   for(let i=0;i<2;i++){await db.query('insert into auth.users values($1,now())',[ids[i]]);await db.query('insert into public.profiles(user_id,username_display) values($1,$2)',[ids[i],names[i]]);}
   }
   process.env.ALLOWED_ORIGINS='http://127.0.0.1:4187';
   server=createGameServer({outboxDirectory:directory,queueClock:()=>performance.now()+clockOffset,
     verifyIdentity:live?undefined:async token=>{const i=tokens.indexOf(token);if(i<0)throw new Error('Invalid test identity');return{userId:ids[i],username:names[i],expiresAt:Date.now()+3600000};},
-    resultSink:live?undefined:async result=>{await db.transaction(async tx=>{await tx.exec('set local role service_role');await tx.query('select public.record_match($1::jsonb)',[JSON.stringify(result)]);});},
+    resultSink:live?undefined:async result=>{await db.transaction(async tx=>{await tx.exec('set local role service_role');await tx.query('select public.record_match_combat($1::jsonb)',[JSON.stringify(result)]);});},
   });
   await server.outbox.ready;
   await new Promise<void>(r=>server!.http.listen(0,'127.0.0.1',r));
@@ -67,11 +67,12 @@ try{
   for(let i=0;i<2;i++){
     const context=await browser.newContext({viewport:{width:1440,height:1000}});
     const session=live?liveSessions[i]:{access_token:tokens[i],refresh_token:'fixture-refresh',token_type:'bearer',expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,user:{id:ids[i],aud:'authenticated',role:'authenticated',email:`player${i}@example.invalid`,email_confirmed_at:'2026-10-28T00:00:00Z',app_metadata:{provider:'email'},user_metadata:{},created_at:'2026-10-28T00:00:00Z'}};
-    await context.addInitScript(({session,key})=>{localStorage.setItem(key,JSON.stringify(session));localStorage.setItem('trace.settings',JSON.stringify({graphics:'competitive',frameCap:60,renderScale:0.5}));},{session,key:`sb-${new URL(providerUrl).hostname.split('.')[0]}-auth-token`});
+    await context.addInitScript(({session,key})=>{localStorage.setItem(key,JSON.stringify(session));if(!localStorage.getItem('trace.settings'))localStorage.setItem('trace.settings',JSON.stringify({graphics:'competitive',frameCap:60,renderScale:0.5}));},{session,key:`sb-${new URL(providerUrl).hostname.split('.')[0]}-auth-token`});
     if(!live)await context.route('https://trace-browser.test/**',async route=>{
       const path=new URL(route.request().url()).pathname;let data:unknown=[];
       if(path==='/rest/v1/profiles')data=(await db.query('select * from public.profiles where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/player_progress')data=(await db.query('select * from public.player_progress where user_id=$1',[ids[i]])).rows;
+      else if(path==='/rest/v1/player_combat_stats')data=(await db.query('select * from public.player_combat_stats where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/player_stats')data=(await db.query('select * from public.player_stats where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/match_results')data=(await db.query(`select m.kind,m.mode,m.completed_at,m.status,json_build_array(json_build_object('outcome',p.outcome,'xp',p.xp,'rounds_won',p.rounds_won)) as match_participants from public.match_results m join public.match_participants p on m.id=p.match_id where p.user_id=$1 order by m.completed_at desc limit 10`,[ids[i]])).rows;
       else if(path==='/auth/v1/user')data=session.user;
@@ -82,6 +83,8 @@ try{
     await page.getByRole('button',{name:names[i],exact:true}).waitFor();
   }
   const [a,b]=pages;
+  await mkdir(resolve('test-results'),{recursive:true});
+  for(const page of pages)await page.evaluate(()=>{const e=(window as any).__traceEngine;(window as any).__audioEvents=[];const play=e.audio.play.bind(e.audio);e.audio.play=(kind:string,now:number)=>{(window as any).__audioEvents.push({kind,now});return play(kind,now);};});
   const matchCount=async()=>{
     if(!live)return (await db.query('select * from public.match_results')).rows.length;
     const {data,error}=await admin!.from('match_participants').select('match_id').in('user_id',ids);
@@ -112,12 +115,25 @@ try{
   },i);
   await a.getByRole('button',{name:'Approve mode & ready',exact:true}).click();await a.evaluate(()=>document.exitPointerLock());
   await b.getByRole('button',{name:'Approve mode & ready',exact:true}).click();await b.evaluate(()=>document.exitPointerLock());
+  await until(()=>room.phase==='roundEnd',45000);
+  await a.getByRole('region',{name:'Round comparison'}).waitFor();
+  await a.screenshot({path:resolve('test-results/combat-round.png')});
+  assert.ok(room.lastRound!.players[0].stats.attack>0);
+  assert.ok(room.lastRound!.players[0].stats.tracked<=room.lastRound!.players[0].stats.attack);
   await until(()=>room.phase==='finished',65000);await until(()=>room.resultState==='saved');
   assert.equal(room.kind,'public');assert.equal(await matchCount(),1);
   assert.equal(await totalXP(ids[0]),100);
   assert.equal(await totalXP(ids[1]),40);
   await server.outbox.flush();assert.equal(await matchCount(),1);
+  if(!live){
+    const saved=(await db.query<{attack_ms:number;tracking_ms:number;rounds:unknown[]}>('select attack_ms,tracking_ms,rounds from public.match_combat where user_id=$1',[ids[0]])).rows[0];
+    assert.ok(saved.attack_ms>=saved.tracking_ms);assert.equal(saved.rounds.length,2);
+  }
+  const decoded=await a.evaluate(()=>{const e=(window as any).__traceEngine;return {buffers:e.audio.buffers.size,state:e.audio.context.state,events:(window as any).__audioEvents};});
+  assert.equal(decoded.buffers,4);assert.equal(decoded.state,'running');assert.equal(decoded.events.filter((e:any)=>e.kind==='kill').length,2);
+  console.log('PASS: four supplied OGG files decode in Chrome; authoritative round comparisons, persisted round stats and exactly two kill audio events.');
   console.log('PASS: browser-driven human duel completes through authoritative damage; PostgreSQL records one result and 100/40 XP.');
+  await a.getByRole('button',{name:'Return to match menu',exact:true}).click();await b.getByRole('button',{name:'Return to match menu',exact:true}).click();
   await a.getByRole('button',{name:'Leave room',exact:true}).click();await b.getByRole('button',{name:'Leave room',exact:true}).click();
   await a.getByRole('button',{name:/Quick Play/}).click();clockOffset+=BOT_WAIT_MS-1000;server.matchmaking.tick();
   assert.equal(await a.getByRole('button',{name:'Challenge Extra Hard AI [BOT]',exact:true}).count(),0);
@@ -131,8 +147,42 @@ try{
   const stats=live?(await admin!.from('player_stats').select('kind,wins,losses').eq('user_id',ids[0]).order('kind')).data:(await db.query<{kind:string;wins:number;losses:number}>('select kind,wins,losses from public.player_stats where user_id=$1 order by kind',[ids[0]])).rows;
   assert.deepEqual(stats,[{kind:'ai',wins:0,losses:1},{kind:'public',wins:1,losses:0}]);
   assert.equal(await totalXP(ids[0]),110);
+  await a.getByRole('button',{name:'Return to match menu',exact:true}).click();
   await a.getByRole('button',{name:'Leave room',exact:true}).click();await a.getByRole('button',{name:'Account',exact:true}).click();await a.getByText('110 XP',{exact:true}).waitFor();
   await mkdir(resolve('test-results'),{recursive:true});await a.screenshot({path:resolve(live?'test-results/addon-profile-live.png':'test-results/addon-profile.png')});
+  // Real pointer-lock practice with scripted mouse-equivalent angles; ordinary simulation validates damage.
+  await a.getByRole('button',{name:'Practice',exact:true}).click();
+  await a.getByRole('button',{name:'Enter arena',exact:false}).click();
+  await a.evaluate(`(()=>{
+    const e=window.__traceEngine;e.body.x=5;e.body.z=9;
+    window.__practiceAim=true;
+    const aim=()=>{if(!window.__practiceAim)return;const p=e.practice.position;const dx=p.x-e.body.x,dz=p.z-e.body.z;e.yaw=Math.atan2(-dx,-dz);e.pitch=Math.atan2(p.y+.74*e.practice.profile.height/1.8-(e.body.y+1.6),Math.hypot(dx,dz));requestAnimationFrame(aim);};aim();
+  })()`);
+  await a.mouse.down();
+  await until(async()=>await a.evaluate(()=>(window as any).__traceEngine.practice.kills>=1),30000);
+  await a.mouse.up();
+  await until(async()=>await a.evaluate(()=>(window as any).__traceEngine.practice.wave>=2),5000);
+  await until(async()=>await a.locator('.hit-confirm').getAttribute('aria-label')==='No confirmed hit',2000);
+  const practiceReport=await a.evaluate(()=>{const e=(window as any).__traceEngine;return {frames:e.metrics.stats(),stats:e.practice.stats,events:(window as any).__audioEvents,buffers:[...e.audio.buffers.entries()].map(([name,b]:any)=>({name,duration:b.duration,channels:b.numberOfChannels,sampleRate:b.sampleRate}))};});
+  assert.ok(practiceReport.stats.headDamage>0);assert.ok(practiceReport.events.some((event:any)=>event.kind==='headshot'));assert.equal(practiceReport.events.filter((event:any)=>event.kind==='kill').length,3);
+  await writeFile(resolve('docs/combat-browser-performance.json'),JSON.stringify({scope:'Headless Chrome, 1440x1000 viewport, competitive graphics, 0.5 render scale, 60 FPS cap. Automated run; not a 240 FPS claim or physical audio-output test.',frames:practiceReport.frames,audioBuffers:practiceReport.buffers},null,2)+'\n');
+  await a.screenshot({path:resolve('test-results/combat-practice.png')});
+  for(const [width,height] of [[1920,1080],[2560,1440],[3440,1440]]){
+    await a.setViewportSize({width,height});
+    const rects=await a.evaluate(()=>{const top=document.querySelector('.combat-top')!.getBoundingClientRect(),bottom=document.querySelector('.combat-bottom')!.getBoundingClientRect();return {top:top.bottom,bottom:bottom.top};});
+    assert.ok(rects.top<height/2 && rects.bottom>height/2);
+  }
+  await a.setViewportSize({width:1440,height:1000});
+  await a.evaluate(()=>{(window as any).__practiceAim=false;document.exitPointerLock();});
+  await a.getByRole('button',{name:'End practice & view session',exact:true}).click();
+  await a.getByRole('region',{name:'Practice session summary'}).waitFor();
+  await a.screenshot({path:resolve('test-results/combat-session.png')});
+  await a.getByRole('button',{name:'Back to practice',exact:true}).click();
+  await a.getByRole('button',{name:'Settings',exact:true}).click();
+  await a.getByLabel('Mute all',{exact:true}).check();
+  assert.equal(await a.evaluate(()=>JSON.parse(localStorage.getItem('trace.settings')!).muteAll),true);
+  await a.reload();await a.getByRole('button',{name:'Settings',exact:true}).click();assert.equal(await a.getByLabel('Mute all',{exact:true}).isChecked(),true);
+  console.log('PASS: practice head tracking, wave transition, kill/spawn feedback and session summary through real Chrome pointer lock.');
   assert.deepEqual(errors,[]);console.log('PASS: five-minute opt-in AI offer, continued human search, AI gameplay and separate persisted stats/10 XP loss reward. Profile displays saved results.');
   console.log(live?'LIVE PASS: real Supabase password login, verified sockets, result finalization and browser profile reads. Email delivery and two physical devices remain untested.':'LIMIT: authentication is fixture-based; live Supabase/email and two physical devices were not tested.');
 }catch(error){await mkdir(resolve('test-results'),{recursive:true});await pages[0]?.screenshot({path:resolve('test-results/addon-failure.png')}).catch(()=>{});throw error;}

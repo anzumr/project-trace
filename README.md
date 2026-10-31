@@ -4,6 +4,8 @@ First-person 1v1 mouse-tracking duels with a Node + Socket.IO authoritative serv
 
 Accounts, server-confirmed progress, public human matchmaking and optional Extra Hard AI are implemented. See [Add-on 01 setup and rules](docs/addon-01.md) and [verified test results and limits](docs/addon-01-validation.md). The [original account setup guide](docs/phase-5-setup.md) covers initial authentication. Public play additionally needs the match-results migration and server-only key; guest private play still works without them. Settings remain browser-local. No credentials are committed.
 
+See [Combat HUD, audio and statistics update](docs/combat-update.md) for the latest local changes, required additive database migration, sound mappings and verification limits.
+
 ## Launch on Windows
 
 Stop the old server with Ctrl+C. In PowerShell:
@@ -63,7 +65,7 @@ A tied timeout enters 15-second sudden death: the first confirmed hit wins; simu
 
 ## Modes and crosshair editor
 
-In a room, the host chooses Heavy/Tank, Standard/Runner, Agile/Scout or Extreme/Micro. The rotating 3D preview uses the actual target dimensions. Size/speed/jump-impulse multipliers are shown before both players approve. Changing mode clears readiness; mode is locked during a match. Both players always share the same mode. Both multiplayer and practice use 20 HP/s body damage and 1.8× gray-head damage (36 HP/s).
+In a room, the host chooses Heavy/Tank, Standard/Runner, Agile/Scout or Extreme/Micro. The rotating 3D preview uses the actual target dimensions. Size/speed/jump-impulse multipliers are shown before both players approve. Changing mode clears readiness; mode is locked during a match. Both players always share the same mode. Both multiplayer and practice use 20 HP/s body damage and 2× gray-head damage (40 HP/s).
 
 Open **Settings** from the menu or after Escape. Edit dot, cross, hollow circle, cross + dot or minimalist reticles. Color, opacity, size, thickness, gap and outline update the live preview and screen-center overlay immediately. Presets, sensitivity reset, invert Y and reset-all are included. Settings save in this browser when localStorage is available, including migration of existing sensitivity/color saves. The actual aim ray does not move with reticle settings.
 

@@ -15,4 +15,4 @@ for(const kind of ['public','ai'] as const)for(const count of [1,10,100]){
   samples.sort((a,b)=>a-b);results.push({kind,rooms:count,meanMs:samples.reduce((a,b)=>a+b,0)/samples.length,p95Ms:samples[Math.floor(samples.length*.95)],p99Ms:samples[Math.floor(samples.length*.99)]});
 }
 const report={at:new Date().toISOString(),node:process.version,cpu:cpus()[0]?.model,scope:'Synthetic room simulation plus 20 Hz snapshot serialization. HP replenished to sustain load. Excludes network, database, browser render and real scheduling; not an FPS or production capacity claim.',results};
-await writeFile('docs/addon-01-performance.json',JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));
+await writeFile(process.argv[2] ?? 'docs/addon-01-performance.json',JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));

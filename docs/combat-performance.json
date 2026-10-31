@@ -1,0 +1,50 @@
+{
+  "at": "2026-10-31T05:58:41.814Z",
+  "node": "v24.19.0",
+  "cpu": "Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz",
+  "scope": "Synthetic room simulation plus 20 Hz snapshot serialization. HP replenished to sustain load. Excludes network, database, browser render and real scheduling; not an FPS or production capacity claim.",
+  "results": [
+    {
+      "kind": "public",
+      "rooms": 1,
+      "meanMs": 0.021143833333332366,
+      "p95Ms": 0.04660000000001219,
+      "p99Ms": 0.11779999999998836
+    },
+    {
+      "kind": "public",
+      "rooms": 10,
+      "meanMs": 0.13052983333333296,
+      "p95Ms": 0.3494000000000028,
+      "p99Ms": 0.49339999999995143
+    },
+    {
+      "kind": "public",
+      "rooms": 100,
+      "meanMs": 1.152683999999997,
+      "p95Ms": 2.81779999999992,
+      "p99Ms": 3.1301999999999452
+    },
+    {
+      "kind": "ai",
+      "rooms": 1,
+      "meanMs": 0.03464533333333406,
+      "p95Ms": 0.06979999999998654,
+      "p99Ms": 0.11320000000000618
+    },
+    {
+      "kind": "ai",
+      "rooms": 10,
+      "meanMs": 0.19597883333333546,
+      "p95Ms": 0.5016000000000531,
+      "p99Ms": 0.7916000000000167
+    },
+    {
+      "kind": "ai",
+      "rooms": 100,
+      "meanMs": 1.5347141666666664,
+      "p95Ms": 3.7464999999997417,
+      "p99Ms": 4.36239999999998
+    }
+  ]
+}

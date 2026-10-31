@@ -9,7 +9,7 @@ export function providerResultSink(): ResultSink | undefined {
   const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SECRET_KEY;
   if (!url || !key) return;
   const client = createClient(url,key,{ auth:{persistSession:false,autoRefreshToken:false}, global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(10000)})} });
-  return async result => { const {error}=await client.rpc('record_match',{p_result:result}); if(error)throw new Error('Result database unavailable or rejected finalization'); };
+  return async result => { const {error}=await client.rpc(result.players.some(p=>p.combat)?'record_match_combat':'record_match',{p_result:result}); if(error)throw new Error('Result database unavailable or rejected finalization'); };
 }
 
 // Durable single-server retry queue. Only the trusted process constructs payloads.

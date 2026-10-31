@@ -1,3 +1,5 @@
+import { CombatAudio } from './CombatAudio';
+import { emptyCombat, type CombatStats } from '@trace/shared/combat';
 import * as THREE from 'three';
 import { CONFIG, COVER, MODES, spawn, move } from '@trace/shared';
 import { Practice, BOT_MODEL } from '@trace/shared/practice';
@@ -9,8 +11,11 @@ import { FrameGate, FrameMetrics, type FrameStats } from './Performance';
 
 import type { Settings } from '../ui/settings';
 export type { Settings } from '../ui/settings';
-export type Hud = { hp: number; ownHp: number; hit: boolean; headshot: boolean; locked: boolean; seconds: number; damage: number; fps: number; ping: number; wave: number; kills: number; speed: number; size: number; circle: boolean; diagnostics?: FrameStats & { skippedTicks:number; serverSkippedTicks:number; serverTickMs:number; drawCalls:number; snapshotAge:number; connection:string } };
+export type PracticeSummary = { duration:number; stats:CombatStats; waves:number; average:number|null; best:number|null; worst:number|null };
+export type Hud = { combat?:CombatStats; lastWave?:{wave:number;stats:CombatStats}|null;  hp: number; ownHp: number; hit: boolean; headshot: boolean; locked: boolean; seconds: number; damage: number; fps: number; ping: number; wave: number; kills: number; speed: number; size: number; circle: boolean; diagnostics?: FrameStats & { skippedTicks:number; serverSkippedTicks:number; serverTickMs:number; drawCalls:number; snapshotAge:number; connection:string } };
 export class Engine {
+  private audio = new CombatAudio(()=>this.settings,message=>this.onError(message));
+  private practiceSession = 0;
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(85, 1, 0.05, 110);
@@ -43,6 +48,12 @@ export class Engine {
   private accumulator = 0;
   private previous = 0;
   private lastHud = 0;
+  private publishedHud: Hud | undefined;
+  private publish(hud:Hud) { this.publishedHud=hud; this.onHud(hud); }
+  private feedback() {
+    const headshot=this.hit && (this.network.snapshot ? !!this.network.snapshot.players.find(p=>p.id===this.network.id)?.headshot : this.practice.headshot);
+    if(this.publishedHud && (this.publishedHud.hit!==this.hit || this.publishedHud.headshot!==headshot || this.publishedHud.locked!==this.locked)) this.publish({...this.publishedHud,hit:this.hit,headshot,locked:this.locked});
+  }
   private metrics = new FrameMetrics();
   private gate = new FrameGate();
   private stats = this.metrics.stats();
@@ -111,22 +122,29 @@ export class Engine {
     if (!state.paused && (state.phase === 'live' || state.phase === 'suddenDeath')) for (const input of this.pending) move(this.body, input, CONFIG.tick, [COVER], this.network.snapshot?.mode ?? 'standard');
     else { this.pending = []; if (this.locked && state.phase === 'finished' && this.lastPhase !== 'finished') this.blur(); }
     this.lastPhase = state.phase;
+    this.audio.observe({allowInitialSpawn:state.phase==='countdown',key:state.matchId ?? `${state.code}:${state.match}`,spawn:state.roundSerial,kills:me.kills??0,damage:me.damage,headDamage:me.matchStats?.headDamage??0});
     this.ownHp = me.hp; this.hp = state.players.find(p => p.id !== me.id)?.hp ?? CONFIG.hp;
     this.hit = (state.phase === 'live' || state.phase === 'suddenDeath') && me.hit; this.tracked = me.trackingSeconds; this.totalDamage = me.damage;
   };
   async engage() {
+    void this.audio.unlock();
     if (!this.renderer.domElement.requestPointerLock) { this.onError('This browser does not support pointer lock. Use a desktop browser with a mouse.'); return; }
     try { await this.renderer.domElement.requestPointerLock({ unadjustedMovement: true }); }
     catch { try { await this.renderer.domElement.requestPointerLock(); } catch { this.onError('Mouse capture was denied. Click Enter arena to retry.'); } }
   }
-  reset() { if (this.network.snapshot) return; this.practice = new Practice(); this.hp = CONFIG.hp; this.ownHp = CONFIG.hp; this.tracked = 0; this.totalDamage = 0; this.body = spawn(); this.yaw = 0; this.pitch = 0; this.hit = false; this.firing = false; this.keys.clear(); this.jump = false; }
+  endPractice(): PracticeSummary {
+    this.blur();
+    const summary={duration:this.practice.elapsed,stats:{...this.practice.stats},waves:this.practice.kills,average:this.practice.kills?this.practice.completedDuration/this.practice.kills:null,best:this.practice.best,worst:this.practice.worst};
+    this.reset();return summary;
+  }
+  reset() { if (this.network.snapshot) return; this.practice = new Practice(); this.practiceSession++; this.hp = CONFIG.hp; this.ownHp = CONFIG.hp; this.tracked = 0; this.totalDamage = 0; this.body = spawn(); this.yaw = 0; this.pitch = 0; this.hit = false; this.firing = false; this.keys.clear(); this.jump = false; }
   private resize = () => { const w = this.host.clientWidth, h = this.host.clientHeight; this.renderer.setSize(w, h); this.camera.aspect = w / Math.max(1, h); this.camera.updateProjectionMatrix(); };
   private keydown = (e: KeyboardEvent) => { if (!this.locked) return; if (['KeyW','KeyA','KeyS','KeyD','Space'].includes(e.code)) e.preventDefault(); this.keys.add(e.code); if (e.code === 'Space' && !e.repeat) this.jump = true; };
   private keyup = (e: KeyboardEvent) => { this.keys.delete(e.code); };
   private mouse = (e: MouseEvent) => { if (!this.locked) return; this.yaw -= e.movementX * this.settings.sensitivity; this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * this.settings.sensitivity * (this.settings.invert ? -1 : 1), -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01); };
   private mouseDown = (e: MouseEvent) => { if (e.button === 0 && this.locked) this.firing = true; };
-  private mouseUp = (e: MouseEvent) => { if (e.button === 0) { this.firing = false; this.hit = false; } };
-  private lockChange = () => { this.keys.clear(); this.jump = false; this.firing = false; this.hit = false; this.accumulator = 0; if (!this.locked) { this.pending = []; this.network.send(this.input(false)); } };
+  private mouseUp = (e: MouseEvent) => { if (e.button === 0) { this.firing = false; this.hit = false; this.feedback(); } };
+  private lockChange = () => { this.keys.clear(); this.jump = false; this.firing = false; this.hit = false; this.accumulator = 0; this.feedback(); if (!this.locked) { this.pending = []; this.network.send(this.input(false)); } };
   private blur = () => { if (this.locked) document.exitPointerLock(); this.lockChange(); };
   private visibility = () => { if (document.hidden) this.blur(); };
   private contextLost = (event: Event) => { event.preventDefault();this.blur();this.onError('Graphics context lost. Reload the page to restore the arena.'); };
@@ -146,7 +164,7 @@ export class Engine {
     while (this.accumulator >= CONFIG.tick) {
       this.accumulator -= CONFIG.tick;
       if (this.network.snapshot) {
-        if(this.network.snapshotAge>=1000)this.hit=false;
+        if(this.network.snapshotAge>=200 || this.network.snapshot.paused || !this.firing)this.hit=false;
         if (!this.network.snapshot.paused && (this.network.snapshot.phase === 'live' || this.network.snapshot.phase === 'suddenDeath')) {
           const input = this.input(this.locked && this.network.snapshotAge < 1000); this.jump = false;
           move(this.body, input, CONFIG.tick, [COVER], this.network.snapshot?.mode ?? 'standard');
@@ -161,6 +179,7 @@ export class Engine {
       this.camera.position.set(this.body.x, this.body.y + CONFIG.eyeHeight, this.body.z);
       this.camera.rotation.set(this.pitch, this.yaw, 0); this.camera.getWorldDirection(this.direction);
       this.practice.step(CONFIG.tick, this.locked, this.firing, this.camera.position, this.direction);
+      if(this.locked)this.audio.observe({key:`practice:${this.practiceSession}`,spawn:this.practice.spawnSerial,kills:this.practice.kills,damage:this.practice.damage,headDamage:this.practice.stats.headDamage});
       this.hp = this.practice.hp; this.hit = this.practice.hit; this.totalDamage = this.practice.damage; this.tracked = this.practice.tracked;
     }
     this.camera.position.set(this.body.x, this.body.y + CONFIG.eyeHeight * MODES[this.network.snapshot?.mode ?? 'standard'].scale, this.body.z); this.camera.rotation.set(this.pitch, this.yaw, 0);
@@ -184,16 +203,18 @@ export class Engine {
     this.healthBar.sprite.visible = visible;
     this.healthBar.sprite.position.set(this.target.position.x, this.target.position.y + (online ? CONFIG.targetHeight * mode.scale : profile.height) / 2 + 0.5, this.target.position.z);
     this.healthBar.update(this.hp);
+    this.feedback();
+    this.audio.update();
     const render=this.gate.due(now,this.settings.frameCap);
     if(render)this.renderer.render(this.scene,this.camera);
     this.cpuWork+=performance.now()-cpuStart;
     if(render){if(this.lastRender)this.metrics.record(now-this.lastRender,this.cpuWork);this.lastRender=now;this.cpuWork=0;}
     if(now-this.lastStats>=1000){this.stats=this.metrics.stats();this.lastStats=now;}
-    if (now - this.lastHud >= 100) { this.onHud({ hp: this.hp, ownHp: this.ownHp, hit: this.hit, headshot: this.hit && (online ? !!this.network.snapshot?.players.find(p => p.id === this.network.id)?.headshot : this.practice.headshot), locked: this.locked, seconds: this.tracked, damage: this.totalDamage, fps: this.stats.averageMs ? 1000/this.stats.averageMs : 0, ping: this.network.ping, wave: this.practice.wave, kills: this.practice.kills, speed: profile.speed, size: profile.width / BOT_MODEL.width, circle: profile.circle, diagnostics:{...this.stats,skippedTicks:this.skippedTicks,serverSkippedTicks:this.network.snapshot?.serverMetrics?.skippedTicks??0,serverTickMs:this.network.snapshot?.serverMetrics?.tickMs??0,drawCalls:this.renderer.info.render.calls,snapshotAge:online?this.network.snapshotAge:0,connection:online?(this.network.snapshotAge>1000?'STALE — INPUT PAUSED':'CONNECTED'):'OFFLINE PRACTICE'} }); this.lastHud = now; }
+    if (now - this.lastHud >= 100) { this.publish({ combat:{...(online ? this.network.snapshot?.players.find(p=>p.id===this.network.id)?.roundStats ?? emptyCombat() : this.practice.waveStats)}, lastWave:this.practice.lastWave, hp: this.hp, ownHp: this.ownHp, hit: this.hit, headshot: this.hit && (online ? !!this.network.snapshot?.players.find(p => p.id === this.network.id)?.headshot : this.practice.headshot), locked: this.locked, seconds: this.tracked, damage: this.totalDamage, fps: this.stats.averageMs ? 1000/this.stats.averageMs : 0, ping: this.network.ping, wave: this.practice.wave, kills: this.practice.kills, speed: profile.speed, size: profile.width / BOT_MODEL.width, circle: profile.circle, diagnostics:{...this.stats,skippedTicks:this.skippedTicks,serverSkippedTicks:this.network.snapshot?.serverMetrics?.skippedTicks??0,serverTickMs:this.network.snapshot?.serverMetrics?.tickMs??0,drawCalls:this.renderer.info.render.calls,snapshotAge:online?this.network.snapshotAge:0,connection:online?(this.network.snapshotAge>1000?'STALE — INPUT PAUSED':'CONNECTED'):'OFFLINE PRACTICE'} }); this.lastHud = now; }
     this.frame = requestAnimationFrame(this.loop);
   };
   dispose() {
-    this.disposed = true; cancelAnimationFrame(this.frame); if (this.locked) document.exitPointerLock(); this.resizeObserver.disconnect();
+    this.audio.dispose(); this.disposed = true; cancelAnimationFrame(this.frame); if (this.locked) document.exitPointerLock(); this.resizeObserver.disconnect();
     document.removeEventListener('keydown', this.keydown); document.removeEventListener('keyup', this.keyup); document.removeEventListener('mousemove', this.mouse); document.removeEventListener('pointerlockchange', this.lockChange); window.removeEventListener('blur', this.blur); document.removeEventListener('visibilitychange', this.visibility);
     document.removeEventListener('mousedown', this.mouseDown); document.removeEventListener('mouseup', this.mouseUp);
     this.network.dispose(); this.healthBar.dispose();

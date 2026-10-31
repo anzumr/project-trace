@@ -2,7 +2,7 @@ import { Crosshair } from './Crosshair';
 import { defaults, PRESETS, STYLES, type Settings } from './settings';
 
 export function SettingsPanel({ settings: s, change, exportReport }: { settings: Settings; change: (settings: Settings) => void; exportReport: () => void }) {
-  const slider = (label: string, key: 'size' | 'opacity' | 'thickness' | 'gap' | 'outlineWidth' | 'sensitivity', min: number, max: number, step: number) => <label>{label}<output>{key === 'sensitivity' ? s[key].toFixed(4) : s[key]}</output><input type="range" min={min} max={max} step={step} value={s[key]} onChange={e => change({ ...s, [key]: +e.target.value })}/></label>;
+  const slider = (label: string, key: 'size' | 'opacity' | 'thickness' | 'gap' | 'outlineWidth' | 'sensitivity' | 'hitOpacity' | 'masterVolume' | 'sfxVolume' | 'hitRate', min: number, max: number, step: number) => <label>{label}<output>{key === 'sensitivity' ? s[key].toFixed(4) : s[key]}</output><input type="range" min={min} max={max} step={step} value={s[key]} onChange={e => change({ ...s, [key]: +e.target.value })}/></label>;
   return <div className="settings editor">
     <p className="note"><strong>Maximum performance:</strong> Enable hardware / graphics acceleration in your browser settings, then relaunch the browser. In Chrome, open Settings → System → Use graphics acceleration when available.</p>
     <label className="row">Graphics<select value={s.graphics} onChange={e=>change({...s,graphics:e.target.value as Settings['graphics']})}><option value="competitive">Competitive</option><option value="balanced">Balanced</option><option value="quality">Quality</option></select></label>
@@ -21,6 +21,16 @@ export function SettingsPanel({ settings: s, change, exportReport }: { settings:
     {slider('Mouse sensitivity', 'sensitivity', 0.0003, 0.006, 0.0001)}
     <button className="reset" onClick={() => change({ ...s, sensitivity: defaults.sensitivity })}>Reset sensitivity</button>
     <label className="row">Invert Y<input type="checkbox" checked={s.invert} onChange={e => change({ ...s, invert: e.target.checked })}/></label>
+    <h3>Combat feedback</h3>
+    <label className="row">Hit markers<input type="checkbox" checked={s.hitMarkers} onChange={e=>change({...s,hitMarkers:e.target.checked})}/></label>
+    {slider('Hit marker opacity','hitOpacity',0,1,0.05)}
+    <label className="row">Body hit color<input type="color" value={s.hitColor} onChange={e=>change({...s,hitColor:e.target.value})}/></label>
+    <p className="note">Headshots use an amber marker with an additional diamond.</p>
+    <label className="row">Floating damage numbers<input type="checkbox" checked={s.damageNumbers} onChange={e=>change({...s,damageNumbers:e.target.checked})}/></label>
+    <h3>Sound</h3>
+    {slider('Master volume','masterVolume',0,1,0.05)}{slider('Sound effects volume','sfxVolume',0,1,0.05)}
+    {slider('Maximum hit sounds / second','hitRate',1,12,1)}
+    {([['muteAll','Mute all'],['hitSound','Body hit sound'],['headshotSound','Headshot sound'],['killSound','Kill confirmed sound'],['spawnSound','Spawn sound']] as const).map(([key,label])=><label className="row" key={key}>{label}<input type="checkbox" checked={s[key]} onChange={e=>change({...s,[key]:e.target.checked})}/></label>)}
     <button className="reset" onClick={() => change({ ...defaults })}>Reset all settings</button>
   </div>;
 }

@@ -1,8 +1,9 @@
+import { emptyCombat, measureCombat, accuracy, type CombatStats } from './combat';
 import { CONFIG, COVER, rayBox, type Vec3 } from './index';
 
 export const PRACTICE = { respawnSeconds: 0.65, speedStep: 1.15, maxSpeed: 3, widthStep: 0.9, heightStep: 0.82, minSize: 0.4, circleAfterShrinks: 8, baseFrequency: 0.45, orbitRadius: 9, radialVariation: 2, centerY: 0.9 } as const;
 export const BOT_MODEL = { width: 0.5, height: 1.8, bodyRadius: 0.25, bodyBottom: -0.65, bodyTop: 0.29, headRadius: 0.16, headY: 0.74 } as const;
-export const HEADSHOT_MULTIPLIER = 1.8;
+export const HEADSHOT_MULTIPLIER = 2;
 export type PracticeHit = { distance: number; region: 'body' | 'head' };
 /** A smooth lobed circuit covers all directions, staying clear of cover and walls. */
 export function practicePosition(phase: number): Vec3 {
@@ -39,7 +40,7 @@ export function tracePracticeModel(origin: Vec3, direction: Vec3, center: Vec3, 
   }
   const valid=hits.filter((t): t is number => t!==null);
   const body = valid.length ? Math.min(...valid) : null;
-  if (head !== null && (body === null || head < body)) return { distance: head, region: 'head' };
+  if (head !== null) return { distance: head, region: 'head' };
   return body === null ? null : { distance: body, region: 'body' };
 }
 export function raySphere(origin: Vec3, direction: Vec3, center: Vec3, radius: number): number | null {
@@ -55,6 +56,14 @@ export function raySphere(origin: Vec3, direction: Vec3, center: Vec3, radius: n
   return t >= 0 ? t : null;
 }
 export class Practice {
+  elapsed = 0;
+  stats = emptyCombat();
+  waveStats = emptyCombat();
+  lastWave: { wave:number; stats:CombatStats } | null = null;
+  best: number | null = null;
+  worst: number | null = null;
+  completedDuration = 0;
+  spawnSerial = 1;
   wave = 1;
   hp: number = CONFIG.hp;
   phase = 2.4;
@@ -69,23 +78,36 @@ export class Practice {
   step(dt: number, active: boolean, firing: boolean, origin: Vec3, direction: Vec3) {
     this.hit = false;
     this.headshot = false;
-    if (!active) return;
+    if (!active) { this.stats.streak = 0; this.waveStats.streak = 0; return; }
+    this.elapsed += dt;
     if (this.hp <= 0) {
       this.respawn = Math.max(0, this.respawn - dt);
-      if (this.respawn <= 1e-9) { this.wave++; this.hp = CONFIG.hp; this.respawn = 0; }
+      if (this.respawn <= 1e-9) { this.wave++; this.hp = CONFIG.hp; this.respawn = 0; this.waveStats = emptyCombat(); this.spawnSerial++; }
       return;
     }
     const profile = this.profile;
     this.phase = (this.phase + PRACTICE.baseFrequency * profile.speed * dt) % (Math.PI * 2);
-    if (!firing) return;
+    // Every active, attack-accepting tick contributes; misses remain in the denominator.
+    if (!firing) { measureCombat(this.stats,dt,false,0,false); measureCombat(this.waveStats,dt,false,0,false); return; }
     const center = this.position;
     const result = tracePracticeModel(origin, direction, center, profile);
     const cover = rayBox(origin, direction, COVER);
     this.hit = result !== null && (cover === null || result.distance < cover);
     this.headshot = this.hit && result?.region === 'head';
+    let damage = 0;
     if (this.hit) {
-      const before = this.hp; this.hp = Math.max(0, this.hp - CONFIG.dps * (this.headshot ? HEADSHOT_MULTIPLIER : 1) * dt); this.damage += before - this.hp; this.tracked += dt;
-      if (this.hp <= 0) { this.kills++; this.respawn = PRACTICE.respawnSeconds; }
+      const before = this.hp; this.hp = Math.max(0, this.hp - CONFIG.dps * (this.headshot ? HEADSHOT_MULTIPLIER : 1) * dt); damage = before - this.hp; this.damage += damage; this.tracked += dt;
+
+    }
+    measureCombat(this.stats,dt,firing,damage,this.headshot);
+    measureCombat(this.waveStats,dt,firing,damage,this.headshot);
+    if (this.hp <= 0) {
+      this.kills++; this.respawn = PRACTICE.respawnSeconds;
+      this.lastWave = { wave:this.wave, stats:{...this.waveStats} };
+      this.completedDuration += this.waveStats.duration;
+      const value = accuracy(this.waveStats);
+      if (value !== null) { this.best = Math.max(this.best ?? value,value); this.worst = Math.min(this.worst ?? value,value); }
+      this.stats.streak = 0;
     }
   }
 }

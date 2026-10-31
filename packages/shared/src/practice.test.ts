@@ -72,7 +72,7 @@ test('reference bot hits capsule and head, misses rounded corners and the head g
   }
 });
 
-test('head tracking deals 36 HP/s, body and final orb deal 20 HP/s across scales', () => {
+test('head tracking deals 40 HP/s, body and final orb deal 20 HP/s across scales', () => {
   for (const wave of [1,9,15,17]) for (const head of [false,true]) {
     const p=new Practice();p.wave=wave;
     for(let i=0;i<60;i++) {
@@ -81,14 +81,14 @@ test('head tracking deals 36 HP/s, body and final orb deal 20 HP/s across scales
       p.step(CONFIG.tick,true,true,{x:center.x,y:center.y+offset,z:center.z+0.6},{x:0,y:0,z:-1});
     }
     const isHead=head && wave<17;
-    assert.ok(Math.abs(p.hp-(isHead?64:80))<1e-8);
+    assert.ok(Math.abs(p.hp-(isHead?60:80))<1e-8);
     assert.equal(p.headshot,isHead);
     p.step(CONFIG.tick,true,false,p.position,{x:0,y:0,z:-1});assert.equal(p.headshot,false);
   }
 });
-test('nearest body blocks a head behind it; cover blocks head damage; lethal headshot clamps HP', () => {
+test('head takes priority when a ray intersects both regions; cover blocks head damage; lethal headshot clamps HP', () => {
   const profile=practiceProfile(1),center={x:0,y:0,z:0};
-  assert.equal(tracePracticeModel({x:0,y:-2,z:0},{x:0,y:1,z:0},center,profile)?.region,'body');
+  assert.equal(tracePracticeModel({x:0,y:-2,z:0},{x:0,y:1,z:0},center,profile)?.region,'head');
   assert.equal(tracePracticeModel({x:0,y:2,z:0},{x:0,y:-1,z:0},center,profile)?.region,'head');
   const p=new Practice();p.phase=Math.PI-PRACTICE.baseFrequency*CONFIG.tick;
   p.step(CONFIG.tick,true,true,{x:0,y:PRACTICE.centerY+BOT_MODEL.headY,z:10},{x:0,y:0,z:-1});assert.equal(p.hp,100);assert.equal(p.headshot,false);

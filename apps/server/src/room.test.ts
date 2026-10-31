@@ -111,15 +111,15 @@ test('server applies every shared mode to both players and keeps damage at 20 HP
   }
 });
 
-test('multiplayer capsule and gray head use exact regions with 1.8x head damage in every mode', () => {
+test('multiplayer capsule and gray head use exact regions with 2x head damage in every mode', () => {
   for(const id of Object.keys(MODES) as ModeId[]) {
     const room=new Room('ABCDE');room.add('a');room.add('b');room.selectMode('a',id);room.ready('a');room.ready('b');advance(room,3);
     const a=room.players.get('a')!,b=room.players.get('b')!;a.state.body.x=b.state.body.x=5;
     for(let i=1;i<=60;i++){const now=room.tick*CONFIG.tick*1000;room.accept('a',{...neutralInput(i),active:true,firing:true},now);room.step(now);}
-    assert.ok(Math.abs(b.state.hp-64)<1e-8);assert.equal(a.state.headshot,true);
+    assert.ok(Math.abs(b.state.hp-60)<1e-8);assert.equal(a.state.headshot,true);
     // Aim through the visible gap at local y=0.56 above the model center.
     const now=room.tick*CONFIG.tick*1000;
     room.accept('a',{...neutralInput(61),active:true,firing:true,pitch:Math.atan2((1.46-1.6)*MODES[id].scale,18)},now);
-    room.step(now);assert.ok(Math.abs(b.state.hp-64)<1e-8);assert.equal(a.state.hit,false);assert.equal(a.state.headshot,false);
+    room.step(now);assert.ok(Math.abs(b.state.hp-60)<1e-8);assert.equal(a.state.hit,false);assert.equal(a.state.headshot,false);
   }
 });

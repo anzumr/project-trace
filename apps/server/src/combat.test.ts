@@ -1,0 +1,25 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {Room} from './game/Room';
+import {CONFIG} from '@trace/shared';
+import {neutralInput} from '@trace/shared/protocol';
+import {accuracy} from '@trace/shared/combat';
+test('server measures confirmed round and match combat, ignores countdown/pause, resets next round and preserves summary',()=>{
+  const r=new Room('STATS',{kind:'public'});r.add('a');r.add('b');r.ready('a');r.ready('b');
+  for(let t=0;t<180;t++)r.step(t*1000/60);
+  const a=r.players.get('a')!,b=r.players.get('b')!;
+  assert.equal(a.state.roundStats!.attack,0);a.state.body.x=b.state.body.x=5;
+  let seq=0;
+  const step=(firing=true,pitch=0)=>{const now=r.tick*1000/60;r.accept('a',{...neutralInput(++seq),active:true,firing,pitch},now);r.step(now);};
+  for(let t=0;t<60;t++)step();
+  assert.ok(Math.abs(b.state.hp-60)<1e-8);assert.ok(Math.abs(a.state.roundStats!.headDamage-40)<1e-8);
+  for(let t=0;t<60;t++)step(true,Math.PI/3);
+  assert.ok(Math.abs(accuracy(a.state.roundStats!)!-50)<1e-8);
+  step(false);assert.equal(a.state.hit,false);assert.equal(a.state.roundStats!.streak,0);
+  r.setConnected('b',false);const frozen=a.state.roundStats!.attack;r.step(90000);assert.equal(a.state.roundStats!.attack,frozen);r.setConnected('b',true);
+  for(let t=0;t<200 && r.phase==='live';t++)step();
+  assert.equal(r.phase,'roundEnd');assert.equal(a.state.kills,1);assert.ok(Math.abs(r.lastRound!.players[0].stats.damage-100)<1e-8);
+  const total=a.state.matchStats!.attack,summary=structuredClone(r.lastRound);
+  for(let t=0;t<180;t++)r.step(r.tick*1000/60);
+  assert.equal(r.phase,'countdown');assert.equal(a.state.roundStats!.attack,0);assert.equal(a.state.matchStats!.attack,total);assert.deepEqual(r.lastRound,summary);
+});

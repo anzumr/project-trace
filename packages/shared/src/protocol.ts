@@ -1,11 +1,12 @@
+import type { CombatStats, RoundCombat } from './combat';
 import type { ModeId } from './modes';
 import type { Body, Input } from './index';
 
 export type PlayerInput = Input & { seq: number; pitch: number; firing: boolean; active: boolean };
-export type PlayerState = { bot?: boolean; connected?: boolean; registered?: boolean; id: string; name: string; wins: number; body: Body; yaw: number; pitch: number; hp: number; ready: boolean; ack: number; hit: boolean; headshot: boolean; damage: number; trackingSeconds: number; firingSeconds: number };
+export type PlayerState = { roundStats?: CombatStats; matchStats?: CombatStats; kills?: number; maxHp?: number; bot?: boolean; connected?: boolean; registered?: boolean; id: string; name: string; wins: number; body: Body; yaw: number; pitch: number; hp: number; ready: boolean; ack: number; hit: boolean; headshot: boolean; damage: number; trackingSeconds: number; firingSeconds: number };
 export type QueueState = { state: 'idle' | 'searching' | 'reconnecting'; elapsedMs: number; botEligible: boolean; mode?: ModeId; serverTime: number };
 export type ActionReply = { ok: boolean; error?: string };
-export type Snapshot = { resultStatus?: 'completed' | 'forfeit' | 'cancelled'; kind?: 'private' | 'public' | 'ai'; matchId?: string; paused?: boolean; resultState?: 'pending' | 'saved' | 'unavailable' | 'retrying'; serverMetrics?: { skippedTicks: number; tickMs: number }; code: string; hostId: string; mode: ModeId; modeRevision: number; phase: 'lobby' | 'countdown' | 'live' | 'suddenDeath' | 'roundEnd' | 'finished'; players: PlayerState[]; winner: string | null; roundWinner: string | null; round: number; roundSerial: number; remaining: number; reason: string; tick: number; time: number; match: number };
+export type Snapshot = { lastRound?: RoundCombat; resultStatus?: 'completed' | 'forfeit' | 'cancelled'; kind?: 'private' | 'public' | 'ai'; matchId?: string; paused?: boolean; resultState?: 'pending' | 'saved' | 'unavailable' | 'retrying'; serverMetrics?: { skippedTicks: number; tickMs: number }; code: string; hostId: string; mode: ModeId; modeRevision: number; phase: 'lobby' | 'countdown' | 'live' | 'suddenDeath' | 'roundEnd' | 'finished'; players: PlayerState[]; winner: string | null; roundWinner: string | null; round: number; roundSerial: number; remaining: number; reason: string; tick: number; time: number; match: number };
 export type RoomReply = { ok: boolean; error?: string; snapshot?: Snapshot };
 export interface ClientEvents {
   queueJoin: (mode: ModeId, reply: (result: ActionReply) => void) => void;
