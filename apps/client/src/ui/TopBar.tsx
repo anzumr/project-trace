@@ -10,7 +10,7 @@ export function TopBar({ account, progress, room, queuing, ping, fps, fullscreen
   const name = account.profile?.username_display || (account.session ? 'Finish setup' : 'Guest');
   const xpShare = 100 * (progress.xp - progress.start) / Math.max(1, progress.next - progress.start);
   return <header className="topbar">
-    <button className="brand" onClick={home} aria-label="krazer.io home"><img src="/brand/krazer-icon.png" alt=""/><span>krazer<b>.io</b></span></button>
+    <button className="brand" onClick={home} aria-label="krazer.io home"><img src="/brand/favicon-162.png" alt=""/><span>krazer<b>.io</b></span></button>
     <div className={`status-chip${room ? ' live' : ''}`}><i/>{room ? `ROOM ${room.code} · ${Math.round(ping)} MS` : queuing ? 'SEARCHING FOR MATCH' : 'OFFLINE'}</div>
     <nav aria-label="Account and display">
       <button className="account-chip" onClick={openAccount}>

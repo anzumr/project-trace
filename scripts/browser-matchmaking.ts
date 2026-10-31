@@ -76,6 +76,7 @@ try{
       else if(path==='/rest/v1/player_stats')data=(await db.query('select * from public.player_stats where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/match_results')data=(await db.query(`select m.kind,m.mode,m.completed_at,m.status,json_build_array(json_build_object('outcome',p.outcome,'xp',p.xp,'rounds_won',p.rounds_won)) as match_participants from public.match_results m join public.match_participants p on m.id=p.match_id where p.user_id=$1 order by m.completed_at desc limit 10`,[ids[i]])).rows;
       else if(path==='/auth/v1/user')data=session.user;
+      else if(path==='/auth/v1/settings')data={external:{google:false}};
       else throw new Error('Unexpected fixture provider request: '+path);
       await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
     });

@@ -9,7 +9,7 @@
 
 /* Top bar */
 .topbar{position:fixed;top:0;left:0;right:0;height:76px;padding:0 clamp(16px,3.4vw,48px);display:flex;align-items:center;gap:16px;border-bottom:1px solid #161d27;background:rgba(7,9,13,.82);backdrop-filter:blur(6px);z-index:5}
-.brand{display:flex;align-items:center;gap:12px;padding:0;background:none;border:0;color:var(--text)}.brand img{width:40px;height:40px;border-radius:10px;object-fit:cover;display:block}.brand span{font:italic 800 20px/1 var(--display);font-stretch:125%;letter-spacing:.5px}.brand b{color:var(--accent);font-weight:800}
+.brand{display:flex;align-items:center;gap:12px;padding:0;background:none;border:0;color:var(--text)}.brand img{width:40px;height:40px;display:block}.brand span{font:italic 800 20px/1 var(--display);font-stretch:125%;letter-spacing:.5px}.brand b{color:var(--accent);font-weight:800}
 .status-chip{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);font-size:11px;font-weight:600;letter-spacing:2px;color:var(--muted);white-space:nowrap}.status-chip i{width:6px;height:6px;background:var(--faint)}.status-chip.live i{background:var(--text)}
 .topbar nav{margin-left:auto;display:flex;align-items:center;gap:12px}
 .account-chip{display:flex;align-items:center;gap:12px;min-height:44px;padding:6px 16px 6px 6px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--text);text-align:left}.account-chip:hover{border-color:var(--line-2)}
@@ -131,6 +131,8 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .account .btn-primary{margin-top:20px}.account .note{margin-top:10px}
 .account-id{display:flex;align-items:center;gap:16px}.account-id .avatar{width:56px;height:56px;font:700 22px var(--display)}.account-id strong{display:block;font:700 22px var(--display)}.account-id small{display:block;margin-top:4px;font-size:13px;color:var(--muted)}
 .account-tabs{display:flex;margin-top:20px;border:1px solid var(--line-2)}.account-tabs button{flex:1;height:40px;border:0;background:transparent;color:var(--text-2);font-size:13px;font-weight:600}.account-tabs button[aria-pressed=true]{background:var(--text);color:var(--bg)}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;height:48px;margin-top:20px;border:1px solid #dadce0;background:#fff;color:#1f1f1f;font:600 15px var(--body)}.btn-google:hover:not(:disabled){background:#f2f2f2}
+.divider{display:flex;align-items:center;gap:12px;margin-top:18px;font-size:11px;font-weight:600;letter-spacing:2px;color:var(--faint)}.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--line-2)}
 .account-message{padding:12px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--text)!important}
 .error{color:#ff8f97!important}
 .progress-panel .kind-row{padding:14px 0;border-top:1px solid #1a212b;font-size:14px}.progress-panel .kind-row:first-of-type{border-top:0}.kind-row strong{display:block;font:700 16px var(--display);letter-spacing:1px}.kind-row div{margin-top:6px}.kind-row small{display:block;margin-top:4px;font-size:12px;line-height:1.5;color:var(--faint)}
