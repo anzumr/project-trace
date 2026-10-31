@@ -19,5 +19,5 @@ test('sound and HUD preferences persist and malformed values are bounded',()=>{
   const settings=parseSettings({masterVolume:.3,sfxVolume:.4,muteAll:true,hitMarkers:false,hitColor:'#123456',hitRate:6,damageNumbers:true});
   assert.deepEqual(parseSettings(JSON.parse(JSON.stringify(settings))),settings);
   const bad=parseSettings({masterVolume:-1,sfxVolume:Infinity,hitRate:999,hitColor:'url(x)',hitOpacity:2});
-  assert.equal(bad.masterVolume,0);assert.equal(bad.sfxVolume,.8);assert.equal(bad.hitRate,12);assert.equal(bad.hitOpacity,1);assert.equal(bad.hitColor,'#a5ffde');
+  assert.equal(bad.masterVolume,0);assert.equal(bad.sfxVolume,.8);assert.equal(bad.hitRate,12);assert.equal(bad.hitOpacity,1);assert.equal(bad.hitColor,'#ffffff');
 });

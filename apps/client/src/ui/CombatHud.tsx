@@ -4,6 +4,8 @@ import { accuracy, emptyCombat, type CombatStats } from '@trace/shared/combat';
 import type { Snapshot } from '@trace/shared/protocol';
 import type { Hud, PracticeSummary } from '../game/Engine';
 import type { Settings } from './settings';
+/** Four short diagonal ticks around an open centre, so the marker never covers the target. */
+const MARKER='M2.5 2.5L8.5 8.5M21.5 2.5L15.5 8.5M2.5 21.5L8.5 15.5M21.5 21.5L15.5 15.5';
 export const percent=(s:CombatStats)=>{const n=accuracy(s);return n===null?'—':`${n.toFixed(1)}%`;};
 function Health({hp,max,label,enemy=false}:{hp:number;max:number;label:string;enemy?:boolean}){
   const value=Math.max(0,Math.min(100,100*hp/Math.max(1,max)));
@@ -24,7 +26,7 @@ export function CombatHud({hud,room,ownId,settings}:{hud:Hud;room:Snapshot|null;
       <div className="combat-clock">{room?<><span>ROUND {room.round || 1} · {me?.wins??0} : {opponent?.wins??0}</span><strong>{room.paused?'RECONNECTING':room.phase==='countdown'?`START ${Math.ceil(room.remaining)}`:room.phase==='suddenDeath'?'SUDDEN DEATH':`${Math.floor(Math.ceil(room.remaining)/60)}:${String(Math.ceil(room.remaining)%60).padStart(2,'0')}`}</strong></>:<><span>{hud.circle?'MICRO ORB':'ENDLESS PRACTICE'} · {hud.speed.toFixed(2)}× SPEED</span><strong>{stats.duration.toFixed(1)}s</strong></>}</div>
     </div>
     <div className="combat-bottom"><div className="combat-readings"><span>TRACKING ACCURACY <b>{percent(stats)}</b></span><span>ROUND DAMAGE <b>{stats.damage.toFixed(1)}</b></span></div><Health key={room?.roundSerial??0} hp={me?.hp??hud.ownHp} max={me?.maxHp??100} label="YOUR HEALTH"/><small>ESC · MENU {room?'— MATCH CONTINUES':''}</small></div>
-    {settings.hitMarkers && <svg className={`hit-confirm ${hud.hit?'lit':''} ${hud.headshot?'head':''}`} viewBox="0 0 64 64" style={{color:hud.headshot?'#ffc46b':settings.hitColor,opacity:hud.hit?settings.hitOpacity:0}} aria-label={hud.hit?hud.headshot?'Confirmed headshot':'Confirmed hit':'No confirmed hit'}><path d="M9 9L19 19 M45 45L55 55 M9 55L19 45 M45 19L55 9"/>{hud.headshot&&<path d="M32 1L37 6L32 11L27 6Z"/>}</svg>}
+    {settings.hitMarkers && <svg className={`hit-confirm ${hud.hit?'lit':''} ${hud.headshot?'head':''}`} viewBox="0 0 24 24" style={{color:hud.headshot?'#ffc46b':settings.hitColor,opacity:hud.hit?settings.hitOpacity:0}} aria-label={hud.hit?hud.headshot?'Confirmed headshot':'Confirmed hit':'No confirmed hit'}>{['outline','tick'].map(layer=><g key={layer} className={layer}><path d={MARKER}/>{hud.headshot&&<path d="M12 .8L13.6 2.4L12 4L10.4 2.4Z"/>}</g>)}</svg>}
     {settings.damageNumbers && hud.hit && <span key={floating.id} className="damage-float">+{floating.value.toFixed(1)}</span>}
     {!room && wave && <div className="wave-summary" role="status"><strong>WAVE {wave.wave} CLEARED</strong><span>{percent(wave.stats)} accuracy · {wave.stats.damage.toFixed(0)} damage</span><span>{wave.stats.tracked.toFixed(2)}s tracking · {wave.stats.headDamage.toFixed(1)} head damage</span></div>}
   </div>;
