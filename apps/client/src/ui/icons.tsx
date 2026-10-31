@@ -1,0 +1,14 @@
+import type { ReactNode } from 'react';
+const line = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
+type Props = { size?: number; color?: string };
+const Icon = ({ size = 20, color, d, children }: Props & { d?: string; children?: ReactNode }) => <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" {...line} style={color ? { color } : undefined}>{d && <path d={d}/>}{children}</svg>;
+export const Arrow = (p: Props) => <Icon {...p} d="M5 12h14M13 6l6 6-6 6"/>;
+export const Chevron = (p: Props) => <Icon {...p} d="M9 6l6 6-6 6"/>;
+export const Back = (p: Props) => <Icon {...p} d="M15 6l-6 6 6 6"/>;
+export const Sliders = (p: Props) => <Icon {...p} d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></Icon>;
+export const Expand = (p: Props) => <Icon {...p} d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>;
+export const Shrink = (p: Props) => <Icon {...p} d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>;
+export const Duel = (p: Props) => <Icon {...p} d="M5 4l12 12M19 4L7 16M4 18l3 2M20 18l-3 2M8 13l-3 3M16 13l3 3"/>;
+export const Users = (p: Props) => <Icon {...p} d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5M16.5 14.6c2.6.2 4.4 2 5 4.9"><circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/></Icon>;
+export const Target = (p: Props) => <Icon {...p} d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></Icon>;
+export const Mouse = (p: Props) => <Icon {...p} d="M12 7v4"><rect x="6" y="3" width="12" height="18" rx="6"/></Icon>;

@@ -80,7 +80,7 @@ try{
       await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
     });
     const page=await context.newPage();pages.push(page);page.on('pageerror',e=>errors.push(e.message));await page.goto('http://127.0.0.1:4187');
-    await page.getByRole('button',{name:names[i],exact:true}).waitFor();
+    await page.locator('.account-chip').getByText(names[i],{exact:true}).waitFor();
   }
   const [a,b]=pages;
   await mkdir(resolve('test-results'),{recursive:true});
@@ -95,15 +95,16 @@ try{
     const {data,error}=await admin!.from('player_progress').select('total_xp').eq('user_id',id).single();if(error)throw new Error('Cannot read QA XP.');return Number(data.total_xp);
   };
 
-  await a.getByRole('button',{name:/Quick Play/}).click();await a.getByRole('button',{name:'Cancel matchmaking',exact:true}).waitFor();
-  await a.getByRole('button',{name:'Cancel matchmaking',exact:true}).click();await a.getByRole('button',{name:/Quick Play/}).waitFor();assert.equal(server.rooms.size,0);
-  await a.getByRole('button',{name:/Quick Play/}).click();await b.getByRole('button',{name:/Quick Play/}).click();
-  await a.getByText('PUBLIC HUMAN MATCH',{exact:true}).waitFor();await b.getByText('PUBLIC HUMAN MATCH',{exact:true}).waitFor();assert.equal(server.rooms.size,1);
+  const quickPlay=async(page:Page)=>{await page.getByRole('button',{name:/^PLAY Quick Play/}).click();await page.getByRole('button',{name:'FIND MATCH',exact:true}).click();};
+  await quickPlay(a);await a.getByRole('button',{name:'Cancel matchmaking',exact:true}).waitFor();
+  await a.getByRole('button',{name:'Cancel matchmaking',exact:true}).click();await a.getByRole('button',{name:'FIND MATCH',exact:true}).waitFor();assert.equal(server.rooms.size,0);
+  await a.getByRole('button',{name:'FIND MATCH',exact:true}).click();await quickPlay(b);
+  await a.getByText(/^QUICK PLAY · PUBLIC MATCH/).waitFor();await b.getByText(/^QUICK PLAY · PUBLIC MATCH/).waitFor();assert.equal(server.rooms.size,1);
   const room=[...server.rooms.values()][0], originalIds=[...room.players.keys()];
   // Exercise real transport disconnect and page-reload recovery, not an injected seat update.
   await b.evaluate(()=>{const e=(window as any).__traceEngine;e.network.socket.io.reconnection(false);e.network.socket.io.engine.close();});
   await until(()=>room.paused);await a.getByText(/Match paused · waiting/).first().waitFor();
-  await b.reload();await b.getByText('PUBLIC HUMAN MATCH',{exact:true}).waitFor();await until(()=>!room.paused);assert.deepEqual([...room.players.keys()],originalIds);
+  await b.reload();await b.getByText(/^QUICK PLAY · PUBLIC MATCH/).waitFor();await until(()=>!room.paused);assert.deepEqual([...room.players.keys()],originalIds);
   console.log('PASS: two Chrome contexts match, cancel, pause and restore the same seats after reload.');
   // Test-only scripted inputs travel through each browser's real Engine prediction/send loop.
   // No server HP/positions/outcomes are edited. B crosses into the clear lane; A tracks it.
@@ -113,8 +114,8 @@ try{
       if(me&&other){if(index===1)strafe=me.body.x<5.2?-1:0;else{const dx=other.body.x-me.body.x,dz=other.body.z-me.body.z;yaw=Math.atan2(-dx,-dz);pitch=Math.atan2(other.body.y+1.0-(me.body.y+1.6),Math.hypot(dx,dz));}}
       return{seq:++e.seq,forward:0,strafe,jump:false,yaw,pitch,firing:index===0,active:true};};
   },i);
-  await a.getByRole('button',{name:'Approve mode & ready',exact:true}).click();await a.evaluate(()=>document.exitPointerLock());
-  await b.getByRole('button',{name:'Approve mode & ready',exact:true}).click();await b.evaluate(()=>document.exitPointerLock());
+  await a.getByRole('button',{name:'APPROVE MODE & READY',exact:true}).click();await a.evaluate(()=>document.exitPointerLock());
+  await b.getByRole('button',{name:'APPROVE MODE & READY',exact:true}).click();await b.evaluate(()=>document.exitPointerLock());
   await until(()=>room.phase==='roundEnd',45000);
   await a.getByRole('region',{name:'Round comparison'}).waitFor();
   await a.screenshot({path:resolve('test-results/combat-round.png')});
@@ -133,26 +134,26 @@ try{
   assert.equal(decoded.buffers,4);assert.equal(decoded.state,'running');assert.equal(decoded.events.filter((e:any)=>e.kind==='kill').length,2);
   console.log('PASS: four supplied OGG files decode in Chrome; authoritative round comparisons, persisted round stats and exactly two kill audio events.');
   console.log('PASS: browser-driven human duel completes through authoritative damage; PostgreSQL records one result and 100/40 XP.');
-  await a.getByRole('button',{name:'Return to match menu',exact:true}).click();await b.getByRole('button',{name:'Return to match menu',exact:true}).click();
+  await a.getByRole('button',{name:'RETURN TO MATCH MENU',exact:true}).click();await b.getByRole('button',{name:'RETURN TO MATCH MENU',exact:true}).click();
   await a.getByRole('button',{name:'Leave room',exact:true}).click();await b.getByRole('button',{name:'Leave room',exact:true}).click();
-  await a.getByRole('button',{name:/Quick Play/}).click();clockOffset+=BOT_WAIT_MS-1000;server.matchmaking.tick();
-  assert.equal(await a.getByRole('button',{name:'Challenge Extra Hard AI [BOT]',exact:true}).count(),0);
-  clockOffset+=1100;server.matchmaking.tick();await a.getByRole('button',{name:'Challenge Extra Hard AI [BOT]',exact:true}).waitFor();
+  await quickPlay(a);clockOffset+=BOT_WAIT_MS-1000;server.matchmaking.tick();
+  assert.equal(await a.getByRole('button',{name:'CHALLENGE EXTRA HARD AI [BOT]',exact:true}).count(),0);
+  clockOffset+=1100;server.matchmaking.tick();await a.getByRole('button',{name:'CHALLENGE EXTRA HARD AI [BOT]',exact:true}).waitFor();
   await a.getByRole('button',{name:'Continue searching for a human',exact:true}).click();assert.equal(server.rooms.size,0);
-  await a.getByRole('button',{name:'Show optional AI challenge',exact:true}).click();await a.getByRole('button',{name:'Challenge Extra Hard AI [BOT]',exact:true}).click();
-  await a.getByText('EXTRA HARD AI · BOT MATCH',{exact:true}).waitFor();const aiRoom=[...server.rooms.values()][0];assert.equal(aiRoom.kind,'ai');
+  await a.getByRole('button',{name:'Show optional AI challenge',exact:true}).click();await a.getByRole('button',{name:'CHALLENGE EXTRA HARD AI [BOT]',exact:true}).click();
+  await a.getByText(/^EXTRA HARD AI · BOT MATCH/).waitFor();const aiRoom=[...server.rooms.values()][0];assert.equal(aiRoom.kind,'ai');
   await a.evaluate(()=>{const e=(window as any).__traceEngine;e.input=()=>({seq:++e.seq,forward:0,strafe:0,jump:false,yaw:0,pitch:0,firing:false,active:true});});
-  await a.getByRole('button',{name:'Approve mode & ready',exact:true}).click();await a.evaluate(()=>document.exitPointerLock());
+  await a.getByRole('button',{name:'APPROVE MODE & READY',exact:true}).click();await a.evaluate(()=>document.exitPointerLock());
   await until(()=>aiRoom.phase==='finished',90000);await until(()=>aiRoom.resultState==='saved');
   const stats=live?(await admin!.from('player_stats').select('kind,wins,losses').eq('user_id',ids[0]).order('kind')).data:(await db.query<{kind:string;wins:number;losses:number}>('select kind,wins,losses from public.player_stats where user_id=$1 order by kind',[ids[0]])).rows;
   assert.deepEqual(stats,[{kind:'ai',wins:0,losses:1},{kind:'public',wins:1,losses:0}]);
   assert.equal(await totalXP(ids[0]),110);
-  await a.getByRole('button',{name:'Return to match menu',exact:true}).click();
-  await a.getByRole('button',{name:'Leave room',exact:true}).click();await a.getByRole('button',{name:'Account',exact:true}).click();await a.getByText('110 XP',{exact:true}).waitFor();
+  await a.getByRole('button',{name:'RETURN TO MATCH MENU',exact:true}).click();
+  await a.getByRole('button',{name:'Leave room',exact:true}).click();await a.locator('.account-chip').click();await a.getByText(/110 XP total/).waitFor();
   await mkdir(resolve('test-results'),{recursive:true});await a.screenshot({path:resolve(live?'test-results/addon-profile-live.png':'test-results/addon-profile.png')});
   // Real pointer-lock practice with scripted mouse-equivalent angles; ordinary simulation validates damage.
-  await a.getByRole('button',{name:'Practice',exact:true}).click();
-  await a.getByRole('button',{name:'Enter arena',exact:false}).click();
+  await a.getByRole('button',{name:'BACK',exact:true}).click();
+  await a.getByRole('button',{name:/^Practice/}).click();
   await a.evaluate(`(()=>{
     const e=window.__traceEngine;e.body.x=5;e.body.z=9;
     window.__practiceAim=true;
@@ -169,19 +170,19 @@ try{
   await a.screenshot({path:resolve('test-results/combat-practice.png')});
   for(const [width,height] of [[1920,1080],[2560,1440],[3440,1440]]){
     await a.setViewportSize({width,height});
-    const rects=await a.evaluate(()=>{const top=document.querySelector('.combat-top')!.getBoundingClientRect(),bottom=document.querySelector('.combat-bottom')!.getBoundingClientRect();return {top:top.bottom,bottom:bottom.top};});
+    const rects=await a.evaluate(()=>{const top=document.querySelector('.hud-top')!.getBoundingClientRect(),bottom=document.querySelector('.hud-bottom')!.getBoundingClientRect();return {top:top.bottom,bottom:bottom.top};});
     assert.ok(rects.top<height/2 && rects.bottom>height/2);
   }
   await a.setViewportSize({width:1440,height:1000});
   await a.evaluate(()=>{(window as any).__practiceAim=false;document.exitPointerLock();});
-  await a.getByRole('button',{name:'End practice & view session',exact:true}).click();
+  await a.getByRole('button',{name:/^End session/}).click();
   await a.getByRole('region',{name:'Practice session summary'}).waitFor();
   await a.screenshot({path:resolve('test-results/combat-session.png')});
-  await a.getByRole('button',{name:'Back to practice',exact:true}).click();
-  await a.getByRole('button',{name:'Settings',exact:true}).click();
+  await a.getByRole('button',{name:'Back to menu',exact:true}).click();
+  await a.getByRole('button',{name:'Settings',exact:true}).click();await a.getByRole('button',{name:'Audio',exact:true}).click();
   await a.getByLabel('Mute all',{exact:true}).check();
   assert.equal(await a.evaluate(()=>JSON.parse(localStorage.getItem('trace.settings')!).muteAll),true);
-  await a.reload();await a.getByRole('button',{name:'Settings',exact:true}).click();assert.equal(await a.getByLabel('Mute all',{exact:true}).isChecked(),true);
+  await a.reload();await a.getByRole('button',{name:'Settings',exact:true}).click();await a.getByRole('button',{name:'Audio',exact:true}).click();assert.equal(await a.getByLabel('Mute all',{exact:true}).isChecked(),true);
   console.log('PASS: practice head tracking, wave transition, kill/spawn feedback and session summary through real Chrome pointer lock.');
   assert.deepEqual(errors,[]);console.log('PASS: five-minute opt-in AI offer, continued human search, AI gameplay and separate persisted stats/10 XP loss reward. Profile displays saved results.');
   console.log(live?'LIVE PASS: real Supabase password login, verified sockets, result finalization and browser profile reads. Email delivery and two physical devices remain untested.':'LIMIT: authentication is fixture-based; live Supabase/email and two physical devices were not tested.');

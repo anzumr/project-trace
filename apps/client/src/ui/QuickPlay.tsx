@@ -1,18 +1,25 @@
 import { useState } from 'react';
-import { MODES, type ModeId } from '@trace/shared';
+import { MODES } from '@trace/shared';
 import type { QueueState } from '@trace/shared/protocol';
 import type { Network } from '../net/Network';
+import { Controls } from './HomeScreen';
 
-export function QuickPlay({queue,network,enabled}:{queue:QueueState;network?:Network;enabled:boolean}) {
-  const [mode,setMode]=useState<ModeId>('standard'),[busy,setBusy]=useState(false),[keepSearching,setKeepSearching]=useState(false);
+export function QueueScreen({queue,network}:{queue:QueueState;network?:Network}) {
+  const [busy,setBusy]=useState(false),[keepSearching,setKeepSearching]=useState(false);
   const action=async(task:()=>Promise<void>)=>{setBusy(true);try{await task();}finally{setBusy(false);}};
-  const seconds=Math.floor(queue.elapsedMs/1000),waiting=queue.state!=='idle';
-  return <section className="quick-play"><div className="eyebrow">PUBLIC CASUAL · HUMAN 1V1</div>
-    <h2>{waiting?'Finding your opponent':'Find your next duel'}</h2>
-    {waiting?<><div className="queue-clock" role="timer" aria-label="Server queue time">{Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')}</div><p role="status" className="note">{queue.state==='reconnecting'?'Connection lost · search timer paused':'Searching on this server'} · {queue.mode && MODES[queue.mode].label}</p>
-      {queue.botEligible && !keepSearching && <div className="bot-offer"><strong>Extra Hard AI is available</strong><p className="note">You have searched for five minutes. This opponent is a BOT. AI results stay separate from human PvP; completed AI matches award reduced XP.</p><button className="primary" disabled={busy} onClick={()=>void action(()=>network!.challengeBot())}>Challenge Extra Hard AI [BOT]</button><button className="reset" onClick={()=>setKeepSearching(true)}>Continue searching for a human</button></div>}
-      {queue.botEligible && keepSearching && <button className="reset" onClick={()=>setKeepSearching(false)}>Show optional AI challenge</button>}
-      <button className="reset" disabled={busy} onClick={()=>void action(()=>network!.cancelQueue())}>Cancel matchmaking</button>
-    </>:<><label className="queue-mode">Character mode<select value={mode} onChange={e=>setMode(e.target.value as ModeId)}>{Object.entries(MODES).map(([id,p])=><option key={id} value={id}>{p.label}</option>)}</select></label><p className="note">Matched players use the same mode. After five minutes you may choose an AI match or keep waiting for a human.</p><button className="primary" disabled={!enabled || !network || busy} onClick={()=>{setKeepSearching(false);void action(()=>network!.findMatch(mode));}}>Quick Play / Find Match ↗</button>{!enabled&&<p className="note">Sign in and finish your username to enter public play.</p>}</>}
+  const seconds=Math.floor(queue.elapsedMs/1000),reconnecting=queue.state==='reconnecting';
+  return <section className="versus wrap" aria-label="Matchmaking">
+    <p className="eyebrow">QUICK PLAY{queue.mode && ` · ${MODES[queue.mode].label.toUpperCase()}`}</p>
+    <h1 className="display">{reconnecting?'Reconnecting':'Finding your opponent'}</h1>
+    <div className="ring" role="timer" aria-label="Server queue time" style={{marginTop:36}}>
+      <svg viewBox="0 0 280 280" aria-hidden="true"><circle cx="140" cy="140" r="120" fill="none" stroke="#1a212b" strokeWidth="8"/>{!reconnecting && <circle className="spin" cx="140" cy="140" r="120" fill="none" stroke="var(--accent)" strokeWidth="8" strokeDasharray="160 754"/>}</svg>
+      <span><small>{reconnecting?'PAUSED':'SEARCHING'}</small><strong className="clock">{Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')}</strong></span>
+    </div>
+    <p role="status" className="status-line">{reconnecting?'Connection lost · search timer paused':'Searching for a human opponent on this server'}</p>
+    {queue.botEligible && !keepSearching && <div className="bot-offer"><strong>EXTRA HARD AI IS AVAILABLE</strong><p>You have searched for five minutes. This opponent is a BOT. AI results stay separate from human PvP, and completed AI matches award reduced XP.</p><button className="btn-primary" disabled={busy} onClick={()=>void action(()=>network!.challengeBot())}><strong>CHALLENGE EXTRA HARD AI [BOT]</strong></button><button className="link-button" onClick={()=>setKeepSearching(true)}>Continue searching for a human</button></div>}
+    {queue.botEligible && keepSearching && <button className="link-button" onClick={()=>setKeepSearching(false)}>Show optional AI challenge</button>}
+    {!queue.botEligible && <p className="note" style={{marginTop:8}}>After five minutes you can choose an AI match or keep waiting for a human.</p>}
+    <div className="room-actions"><button className="btn-ghost" disabled={busy} onClick={()=>void action(()=>network!.cancelQueue())}>Cancel matchmaking</button></div>
+    <div style={{marginTop:40}}><Controls/></div>
   </section>;
 }

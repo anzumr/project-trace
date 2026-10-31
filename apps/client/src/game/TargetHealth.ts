@@ -23,10 +23,10 @@ export class TargetHealth {
     this.lastHp = display;
     const c = this.context;
     c.clearRect(0, 0, 256, 64);
-    c.fillStyle = '#09121a'; c.fillRect(0, 0, 256, 64);
-    c.fillStyle = '#eaf3f5'; c.font = 'bold 24px Arial'; c.textAlign = 'center'; c.fillText(`${display} / ${CONFIG.hp}`, 128, 28);
-    c.fillStyle = '#34444e'; c.fillRect(8, 39, 240, 17);
-    c.fillStyle = display > 30 ? '#a5ffde' : '#ff657e'; c.fillRect(8, 39, 240 * display / CONFIG.hp, 17);
+    c.fillStyle = '#07090d'; c.fillRect(0, 0, 256, 64);
+    c.fillStyle = '#eef2f6'; c.font = 'bold 24px Arial'; c.textAlign = 'center'; c.fillText(`${display} / ${CONFIG.hp}`, 128, 28);
+    c.fillStyle = '#2a3442'; c.fillRect(8, 39, 240, 17);
+    c.fillStyle = display > 30 ? '#e5212e' : '#ffb547'; c.fillRect(8, 39, 240 * display / CONFIG.hp, 17);
     this.texture.needsUpdate = true;
   }
   dispose() { this.texture.dispose(); this.sprite.material.dispose(); }

@@ -73,26 +73,26 @@ export class Engine {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     host.appendChild(this.renderer.domElement);
-    this.scene.background = new THREE.Color('#0a1722');
-    this.scene.fog = new THREE.Fog('#0a1722', 25, 65);
+    this.scene.background = new THREE.Color('#0b0d10');
+    this.scene.fog = new THREE.Fog('#0b0d10', 25, 65);
     this.scene.add(this.decoration);
-    this.scene.add(new THREE.HemisphereLight(0xd6f5ff, 0x283242, 2.7));
+    this.scene.add(new THREE.HemisphereLight(0xe8edf5, 0x262a31, 2.7));
     const sun = new THREE.DirectionalLight(0xffffff, 2); sun.position.set(5, 15, 7); this.scene.add(sun);
     const block = (w: number, h: number, d: number, x: number, y: number, z: number, color: string) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.8 }));
       mesh.position.set(x, y, z); this.scene.add(mesh); return mesh;
     };
-    block(28, 0.3, 28, 0, -0.15, 0, '#172c38');
-    const grid = new THREE.GridHelper(28, 28, '#3b6471', '#25424e'); grid.position.y = 0.003; this.decoration.add(grid);
+    block(28, 0.3, 28, 0, -0.15, 0, '#16191e');
+    const grid = new THREE.GridHelper(28, 28, '#30353e', '#21252c'); grid.position.y = 0.003; this.decoration.add(grid);
     for (const sign of [-1, 1]) {
-      block(29, 4, 0.5, 0, 2, sign * 14.25, '#233d4a');
-      block(0.5, 4, 28, sign * 14.25, 2, 0, '#233d4a');
-      block(28, 0.06, 0.07, 0, 0.08, sign * 13.95, '#6df5df');
-      block(0.07, 0.06, 28, sign * 13.95, 0.08, 0, '#6df5df');
-      for (const x of [-10, -5, 0, 5, 10]) this.decoration.add(block(0.14, 2.6, 0.08, x, 2, sign * 13.97, '#427586'));
+      block(29, 4, 0.5, 0, 2, sign * 14.25, '#22262d');
+      block(0.5, 4, 28, sign * 14.25, 2, 0, '#22262d');
+      block(28, 0.06, 0.07, 0, 0.08, sign * 13.95, '#e5212e');
+      block(0.07, 0.06, 28, sign * 13.95, 0.08, 0, '#e5212e');
+      for (const x of [-10, -5, 0, 5, 10]) this.decoration.add(block(0.14, 2.6, 0.08, x, 2, sign * 13.97, '#353b45'));
     }
-    block(3.6, 2.6, 1, 0, 1.3, -0.5, '#425b69');
-    block(3.6, 0.05, 1, 0, 2.63, -0.5, '#6df5df');
+    block(3.6, 2.6, 1, 0, 1.3, -0.5, '#30353e');
+    block(3.6, 0.05, 1, 0, 2.63, -0.5, '#e5212e');
     this.target = new THREE.Mesh(this.sphereGeometry,new THREE.MeshStandardMaterial({color:'#ff657e',roughness:0.8}));this.scene.add(this.target);
     this.scene.add(this.trainingModel);
     this.scene.add(this.healthBar.sprite);
