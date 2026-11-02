@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyCombat,measureCombat,accuracy} from './combat';
-import {Practice,PRACTICE,practicePosition,BOT_MODEL} from './practice';
+import {Practice,BOT_MODEL} from './practice';
 import {CONFIG} from './index';
 test('time-based accuracy is identical at 60/120/144/240 render FPS; head damage never doubles tracking',()=>{
   for(const fps of [60,120,144,240]){
@@ -17,10 +17,10 @@ test('time-based accuracy is identical at 60/120/144/240 render FPS; head damage
   assert.equal(accuracy(emptyCombat()),null);
 });
 test('practice wave resets, cumulative stats survive, pause and respawn do not accumulate attack',()=>{
-  const p=new Practice();
+  const p=new Practice({still:true});
   p.step(1,false,true,{x:0,y:0,z:0},{x:0,y:0,z:-1});assert.equal(p.stats.attack,0);
   p.step(CONFIG.tick,true,true,{x:0,y:20,z:0},{x:0,y:1,z:0});assert.equal(p.stats.tracked,0);assert.equal(p.stats.attack,CONFIG.tick);
-  p.hp=.1;const center=practicePosition(p.phase+PRACTICE.baseFrequency*p.profile.speed*CONFIG.tick);
+  p.hp=.1;const center=p.position;
   p.step(CONFIG.tick,true,true,{x:center.x,y:center.y+BOT_MODEL.headY,z:center.z+.6},{x:0,y:0,z:-1});
   assert.equal(p.kills,1);assert.equal(p.lastWave?.stats.headDamage,.1);assert.equal(p.stats.tracked,CONFIG.tick);
   const attack=p.stats.attack;for(let i=0;i<40;i++)p.step(CONFIG.tick,true,true,{x:0,y:20,z:0},{x:0,y:1,z:0});

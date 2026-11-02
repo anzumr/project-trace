@@ -52,3 +52,30 @@ test('accounts migration: atomic uniqueness, validation, cooldown, verification 
     assert.equal((await db.query('select * from public.profiles where user_id=$1', [a])).rows.length, 0);
   } finally { await db.close(); }
 });
+test('permanent usernames migration: first claim works, renames are refused even after the old cooldown', { timeout: 30000 }, async () => {
+  const db = new PGlite();
+  const a = '11111111-1111-4111-8111-111111111111', b = '22222222-2222-4222-8222-222222222222';
+  try {
+    await db.exec(`create role anon; create role authenticated;
+      create schema auth; create table auth.users(id uuid primary key, email_confirmed_at timestamptz);
+      create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid$$;
+      grant usage on schema auth to authenticated; grant execute on function auth.uid() to authenticated;
+      insert into auth.users values ('${a}', now()), ('${b}', now());`);
+    for (const name of ['202610270001_accounts.sql', '202611010001_permanent_usernames.sql']) await db.exec(await readFile(new URL(`../../../supabase/migrations/${name}`, import.meta.url), 'utf8'));
+    const asUser = async (id: string, query: string, params: unknown[] = []) => {
+      await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${id}', false);`);
+      try { return await db.query(query, params); } finally { await db.exec('reset role'); }
+    };
+    await asUser(a, 'select public.claim_username($1)', ['TracePlayer']);
+    await asUser(a, 'select public.claim_username($1)', [' TracePlayer ']); // re-confirming the same name stays allowed
+    await assert.rejects(asUser(a, 'select public.claim_username($1)', ['Renamed']), /cannot be changed/);
+    await db.exec(`update public.profiles set username_changed_at=now()-interval '400 days' where user_id='${a}'`);
+    await assert.rejects(asUser(a, 'select public.claim_username($1)', ['Renamed']), /cannot be changed/);
+    assert.deepEqual((await asUser(a, 'select username_display from public.profiles')).rows, [{ username_display: 'TracePlayer' }]);
+    await assert.rejects(asUser(b, 'select public.claim_username($1)', ['traceplayer']), /unique constraint/);
+    await asUser(b, 'select public.claim_username($1)', ['PlayerTwo']);
+    await db.exec('set role anon');
+    await assert.rejects(db.query("select public.claim_username('AnonName')"), /permission denied/);
+    await db.exec('reset role');
+  } finally { await db.close(); }
+});

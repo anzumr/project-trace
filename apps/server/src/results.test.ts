@@ -16,7 +16,7 @@ test('trusted result transaction isolates AI/PvP, retries idempotently, and deni
   const db=new PGlite();
   try{
     await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key,email_confirmed_at timestamptz);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;insert into auth.users values('${accountA}',now()),('${accountB}',now());`);
-    for(const name of ['202610270001_accounts.sql','202610280001_match_results.sql','202610310001_combat_stats.sql'])await db.exec(await readFile(new URL('../../../supabase/migrations/'+name,import.meta.url),'utf8'));
+    for(const name of ['202610270001_accounts.sql','202610280001_match_results.sql','202610310001_combat_stats.sql','202611010001_permanent_usernames.sql'])await db.exec(await readFile(new URL('../../../supabase/migrations/'+name,import.meta.url),'utf8'));
     await db.exec(`insert into public.profiles(user_id,username_display) values('${accountA}','PlayerA'),('${accountB}','PlayerB')`);
     const record=async(result:MatchResult)=>{await db.exec('set role service_role');try{await db.query('select public.record_match_combat($1::jsonb)',[JSON.stringify(result)]);}finally{await db.exec('reset role');}};
     const human=resultFixture(),ai=resultFixture('ai');

@@ -63,6 +63,10 @@ Open `http://localhost:3001`. Vite's public config is embedded at build time: re
 
 With both provider config variables absent, practice and private guest rooms still work; Account explains setup is pending. Invalid or mismatched configuration produces an error, never a pretend signed-in account.
 
+## 2b. Permanent usernames
+
+Run `supabase/migrations/202611010001_permanent_usernames.sql` once in the SQL Editor, after the earlier migrations. From then on `claim_username` only creates a profile (or re-confirms the same name); any rename is refused with error code `UN001`, regardless of the old cooldown setting. The Account screen shows a claimed username read-only. Notes below about renames and cooldowns describe the original behavior and no longer apply once this migration is installed.
+
 ## 3. Account behavior and security boundaries
 
 - Register with email, password and desired username. Confirm the email; then sign in and explicitly claim the username. Signup metadata is only an untrusted suggestion, never a game identity. Another player may claim the name before confirmation; choose another without recreating your account.

@@ -38,11 +38,11 @@ export function AccountPanel({ account, inRoom, progress }: { account: ReturnTyp
         const { error } = await supabase.auth.updateUser({ password });
         if (error) throw new Error('Password update failed. Use a fresh recovery link and a password of at least 12 characters.');
         account.setRecovery(false); setPassword(''); setMessage('Password updated.');
-      } else if (session) {
-        const desired = username ?? profile?.username_display ?? suggested;
+      } else if (session && !profile) {
+        const desired = username ?? suggested;
         if (!usernameValid(desired)) throw new Error('Use 3–16 ASCII letters, numbers or underscores.');
         const { error } = await supabase.rpc('claim_username', { p_username: desired.trim() });
-        if (error) throw new Error(error.code === '23505' ? 'That username has been claimed. Choose another.' : error.code === '22023' ? 'That name is invalid or reserved. Choose another.' : error.code === 'P0001' ? 'Username changes are on cooldown (30 days by default).' : 'Could not save your username. Confirm your email and check your connection.');
+        if (error) throw new Error(error.code === '23505' ? 'That username has been claimed. Choose another.' : error.code === '22023' ? 'That name is invalid or reserved. Choose another.' : error.code === 'UN001' ? 'Usernames are permanent and cannot be changed.' : 'Could not save your username. Confirm your email and check your connection.');
         await account.reload(); setMessage('Username saved.');
       } else if (mode === 'register') {
         if (!usernameValid(username ?? '')) throw new Error('Use 3–16 ASCII letters, numbers or underscores.');
@@ -68,23 +68,23 @@ export function AccountPanel({ account, inRoom, progress }: { account: ReturnTyp
     {inRoom && <p className="note">Leave your room before changing your account.</p>}
     {account.loading ? <p role="status">Loading account…</p> : <>
     {account.error && <><p role="alert" className="error">{account.error}</p><button className="link-button" onClick={() => void account.reload()}>Retry profile</button></>}
-    <form onSubmit={e => void submit(e)}>
+    {profile && !recovery ? <><h2>Your username</h2><p className="note">Usernames are permanent: <strong>{profile.username_display}</strong> is yours for good.</p></> : <form onSubmit={e => void submit(e)}>
       <fieldset disabled={busy || inRoom}>
       {recovery ? <><h2>Choose a new password</h2><label>New password<input className="text-input" type="password" autoComplete="new-password" minLength={12} required value={password} onChange={e => setPassword(e.target.value)}/></label></> : session ? <>
-        <h2>{profile ? 'Account settings' : 'Claim your username'}</h2>
-        <p className="note">{profile ? 'Your account identity stays the same when your name changes. Renames have a 30-day cooldown by default.' : googleUser ? 'Signed in with Google. Choose the name other players will see.' : 'Confirm your email first. If your desired name is taken, choose a different one here.'}</p>
-        <label>Username<input className="text-input" autoComplete="username" maxLength={16} required value={username ?? profile?.username_display ?? suggested} onChange={e => setUsername(e.target.value)} pattern="[A-Za-z0-9_]{3,16}"/></label>
+        <h2>Claim your username</h2>
+        <p className="note">{googleUser ? 'Signed in with Google. Choose the name other players will see.' : 'Confirm your email first. If your desired name is taken, choose a different one here.'} <strong>Usernames are permanent and can’t be changed later.</strong></p>
+        <label>Username<input className="text-input" autoComplete="username" maxLength={16} required value={username ?? suggested} onChange={e => setUsername(e.target.value)} pattern="[A-Za-z0-9_]{3,16}"/></label>
         <p className="note">3–16 letters, numbers or underscores. Case-insensitive uniqueness; reserved names are unavailable.</p>
       </> : <>
         <div className="account-tabs">{(['login', 'register', 'reset'] as const).map(value => <button type="button" key={value} aria-pressed={mode === value} onClick={() => { setMode(value); setMessage(''); setError(''); setResendFor(''); }}>{value === 'login' ? 'Sign in' : value === 'register' ? 'Register' : 'Reset password'}</button>)}</div>
         {googleOn && mode !== 'reset' && <><button type="button" className="btn-google" onClick={() => void withGoogle()}><GoogleMark/>{mode === 'register' ? 'Sign up with Google' : 'Sign in with Google'}</button><div className="divider">OR WITH EMAIL</div></>}
         <label>Email<input className="text-input" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)}/></label>
         {mode !== 'reset' && <label>Password<input className="text-input" type="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={mode === 'register' ? 12 : 1} required value={password} onChange={e => setPassword(e.target.value)}/></label>}
-        {mode === 'register' && <><label>Desired username<input className="text-input" autoComplete="username" required maxLength={16} pattern="[A-Za-z0-9_]{3,16}" value={username ?? ''} onChange={e => setUsername(e.target.value)}/></label><p className="note">Use at least 12 characters for your password. Email confirmation comes before your final username claim.</p></>}
+        {mode === 'register' && <><label>Desired username<input className="text-input" autoComplete="username" required maxLength={16} pattern="[A-Za-z0-9_]{3,16}" value={username ?? ''} onChange={e => setUsername(e.target.value)}/></label><p className="note">Use at least 12 characters for your password. Email confirmation comes before your final username claim. Usernames are permanent.</p></>}
       </>}
       <button className="btn-primary" disabled={!!account.error}><strong>{busy ? 'PLEASE WAIT…' : recovery ? 'UPDATE PASSWORD' : session ? 'SAVE USERNAME' : mode === 'register' ? 'CREATE ACCOUNT' : mode === 'reset' ? 'SEND RECOVERY EMAIL' : 'SIGN IN'}</strong></button>
       </fieldset>
-    </form>
+    </form>}
     {session && <button className="link-button" style={{ marginTop: 12 }} disabled={busy || inRoom} onClick={() => { setBusy(true); void supabase!.auth.signOut({ scope: 'local' }).then(({ error }) => { setBusy(false); if (error) setError('Sign-out failed. Check your connection and retry.'); }); }}>Sign out of this browser</button>}
     {profile && <p className="note">Input and graphics settings remain saved on this browser.</p>}
     {!session && <p className="note">You can also play private rooms as a guest. Guest matches do not earn persistent progress.</p>}
