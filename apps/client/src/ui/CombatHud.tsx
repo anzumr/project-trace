@@ -55,7 +55,7 @@ export function CombatHud({hud,room,ownId,settings}:{hud:Hud;room:Snapshot|null;
   </div>;
 }
 const metrics:[string,(s:CombatStats)=>string][]=[['Tracking accuracy',percent],['Damage dealt',s=>s.damage.toFixed(1)],['Damage received',s=>s.received.toFixed(1)],['Attack time',s=>`${s.attack.toFixed(2)}s`],['Successful tracking',s=>`${s.tracked.toFixed(2)}s`],['Headshot damage',s=>s.headDamage.toFixed(1)],['Head tracking',s=>`${s.headTracked.toFixed(2)}s`],['Longest streak',s=>`${s.longest.toFixed(2)}s`]];
-export function RoundResults({room,ownId,close}:{room:Snapshot;ownId?:string;close:()=>void}){
+export function RoundResults({room,ownId,close,rematch}:{room:Snapshot;ownId?:string;close:()=>void;rematch:()=>void}){
   const [totals,setTotals]=useState(false);
   const r=room.lastRound;if(!r)return null;
   const players=[...r.players].sort((a,b)=>Number(b.id===ownId)-Number(a.id===ownId));
@@ -71,7 +71,7 @@ export function RoundResults({room,ownId,close}:{room:Snapshot;ownId?:string;clo
     <div className="segmented" role="group" aria-label="Statistics range"><button aria-pressed={!totals} onClick={()=>setTotals(false)}>THIS ROUND</button><button aria-pressed={totals} onClick={()=>setTotals(true)}>MATCH TOTALS</button></div>
     <table><thead><tr><th scope="col">{totals?'MATCH TOTALS':`ROUND ${r.round}`}</th>{shown.map(p=><th scope="col" key={p.id}>{(totals?finished && room.winner===p.id:r.winner===p.id)&&<span className="tag">WIN</span>}{p.id===ownId?'You':p.name}</th>)}</tr></thead>
       <tbody>{metrics.map(([label,format])=><tr key={label}><th scope="row">{label}</th>{shown.map(p=><td key={p.id} className={p.id===ownId?'mine':''}>{format(p.stats)}</td>)}</tr>)}<tr><th scope="row">Remaining health</th>{players.map(p=><td key={p.id} className={p.id===ownId?'mine':''}>{p.hp.toFixed(1)}</td>)}</tr></tbody></table>
-    {finished?<div className="final"><p>{room.winner?`${room.players.find(p=>p.id===room.winner)?.name} wins the match`:'Match ended'} · {room.resultState==='saved'?'Saved':room.resultState==='unavailable'?'Saving unavailable':'Saving / retrying…'}</p><button className="btn-primary" onClick={close}><strong>RETURN TO MATCH MENU</strong><Arrow size={24}/></button></div>
+    {finished?<div className="final"><p>{room.winner?`${room.players.find(p=>p.id===room.winner)?.name} wins the match`:'Match ended'} · {room.resultState==='saved'?'Saved':room.resultState==='unavailable'?'Saving unavailable':'Saving / retrying…'}</p>{room.kind!=='ai' && <button className="btn-primary" disabled={room.players.length!==2 || room.players.some(p=>p.connected===false) || room.players.find(p=>p.id===ownId)?.ready} onClick={rematch}><strong>{room.players.find(p=>p.id===ownId)?.ready?'WAITING FOR OPPONENT…':room.players.some(p=>p.id!==ownId && p.ready)?'ACCEPT REMATCH':'REMATCH'}</strong><Arrow size={24}/></button>}<button className="btn-ghost" onClick={close}>RETURN TO MATCH MENU</button></div>
       :<div className="next-row"><span>NEXT ROUND IN {Math.ceil(room.remaining)}</span><span className="bar" role="progressbar" aria-label="Time until next round" aria-valuemin={0} aria-valuemax={CONFIG.roundSummarySeconds} aria-valuenow={CONFIG.roundSummarySeconds-room.remaining}><i style={{width:`${100*(1-room.remaining/CONFIG.roundSummarySeconds)}%`}}/></span><small>ESC releases the mouse</small></div>}
   </section></div>;
 }

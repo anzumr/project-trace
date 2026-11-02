@@ -7,6 +7,21 @@ import { BOT_MODEL } from '@trace/shared/practice';
 
 function advance(room: Room, seconds: number) { for (let i=0;i<Math.round(seconds/CONFIG.tick);i++) room.step(room.tick * CONFIG.tick * 1000); }
 function live() { const room = new Room('ABCDE'); room.add('a'); room.add('b'); room.ready('a'); room.ready('b'); advance(room,CONFIG.countdownSeconds); return room; }
+
+test('public rematches require two connected approvals and reset match identity and stats',()=>{
+  const results:string[]=[],room=new Room('ABCDE',{kind:'public',onResult:r=>results.push(r.id)});
+  room.add('a',{userId:'a',username:'Alpha'});room.add('b',{userId:'b',username:'Beta'});
+  room.ready('a');room.ready('b');advance(room,CONFIG.countdownSeconds);
+  for(let round=0;round<2;round++){room.players.get('b')!.state.hp=1;advance(room,CONFIG.roundSeconds);if(round===0)advance(room,CONFIG.roundSummarySeconds+CONFIG.countdownSeconds);}
+  assert.equal(room.phase,'finished');assert.equal(results.length,1);const previous=room.matchId;
+  room.ready('a',room.modeRevision+1);assert.equal(room.players.get('a')!.state.ready,false);
+  room.ready('a');assert.equal(room.phase,'finished');room.setConnected('b',false);room.ready('b');assert.equal(room.phase,'finished');
+  room.setConnected('b',true);room.ready('b');assert.equal(room.phase,'countdown');assert.notEqual(room.matchId,previous);assert.equal(room.match,2);
+  assert.equal(room.resultStatus,undefined);assert.equal(room.lastRound,undefined);assert.equal(room.resultState,'unavailable');
+  for(const p of room.players.values()){assert.equal(p.state.wins,0);assert.equal(p.state.hp,100);assert.equal(p.state.damage,0);assert.equal(p.state.matchStats!.attack,0);}
+  advance(room,CONFIG.countdownSeconds);room.forfeit('b');assert.equal(results.length,2);assert.notEqual(results[0],results[1]);
+  room.setConnected('b',false);room.ready('a');assert.equal(room.players.get('a')!.state.ready,false);
+});
 test('two players only, both ready, immutable client authority', () => {
   const room = new Room('ABCDE'); assert.ok(room.add('a')); assert.ok(room.add('b')); assert.equal(room.add('c'), false);
   room.ready('a'); assert.equal(room.phase, 'lobby'); room.ready('b'); assert.equal(room.phase, 'countdown'); advance(room,CONFIG.countdownSeconds); assert.equal(room.phase,'live');

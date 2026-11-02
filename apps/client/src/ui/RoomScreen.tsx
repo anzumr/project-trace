@@ -19,7 +19,7 @@ export function RoomScreen({ room, me, opponent, enter, ready, leave, choose }: 
   const title = finished ? room.resultStatus === 'cancelled' ? 'Match cancelled' : room.winner ? room.winner === me?.id ? 'Victory' : 'Defeat' : 'Draw'
     : inMatch ? 'Match in progress' : room.kind === 'private' ? room.players.length < 2 ? 'Waiting for opponent' : 'Ready up' : 'Match found';
   const saved = room.resultStatus === 'cancelled' ? 'No wins or XP awarded.' : room.resultState === 'saved' ? 'Result saved to your account.' : room.resultState === 'pending' ? 'Saving result…' : room.resultState === 'retrying' ? 'Result save delayed — the server will retry.' : 'Persistent results are unavailable on this server.';
-  const readyLabel = me?.ready ? 'WAITING FOR OPPONENT…' : finished ? room.kind === 'private' ? 'APPROVE MODE & REMATCH' : 'MATCH COMPLETE' : 'APPROVE MODE & READY';
+  const readyLabel = me?.ready ? 'WAITING FOR OPPONENT…' : finished ? room.kind === 'ai' ? 'MATCH COMPLETE' : 'APPROVE MODE & REMATCH' : 'APPROVE MODE & READY';
   return <section className="versus wrap" aria-label="Match lobby">
     <p className="eyebrow">{kind} · {MODES[room.mode].label.toUpperCase()}</p>
     <h1 className="display" style={finished && room.winner === me?.id ? { color: 'var(--accent)' } : undefined}>{title}</h1>
@@ -40,7 +40,7 @@ export function RoomScreen({ room, me, opponent, enter, ready, leave, choose }: 
       : <div className="chips" style={{ marginTop: 24 }}><span className="chip">BEST OF {CONFIG.winsRequired * 2 - 1}</span><span className="chip">{CONFIG.roundSeconds}-SECOND ROUNDS</span><span className="chip">{damageNote.toUpperCase()}</span></div>}
     <div className="room-actions">
       {inMatch ? <button className="btn-primary" onClick={enter}><strong>ENTER DUEL</strong><Arrow size={24}/></button>
-        : <button className="btn-primary" disabled={room.paused || room.players.length !== 2 || me?.ready || (room.kind !== 'private' && finished)} onClick={ready}><strong>{readyLabel}</strong><Arrow size={24}/></button>}
+        : <button className="btn-primary" disabled={room.paused || room.players.length !== 2 || room.players.some(p=>p.connected===false) || me?.ready || (room.kind === 'ai' && finished)} onClick={ready}><strong>{readyLabel}</strong><Arrow size={24}/></button>}
       <button className="btn-ghost" onClick={leave}>Leave room</button>
     </div>
   </section>;

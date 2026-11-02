@@ -65,7 +65,8 @@ export class Network {
       if (!reply.ok || !reply.snapshot) throw new Error(reply.error || 'Could not enter room.');
       this.receive(reply.snapshot);
       if (name) this.socket.emit('setName', name);
-    } catch (err) { this.error(err instanceof Error ? err.message : 'Connection failed.'); }
+      return reply.snapshot;
+    } catch (err) { this.error(err instanceof Error ? err.message : 'Connection failed.'); return null; }
   }
   async findMatch(mode: ModeId) {
     try { await this.connect(); const result = await this.socket.timeout(5000).emitWithAck('queueJoin',mode); if(!result.ok)throw new Error(result.error); this.rememberPublic(true); this.error(''); }

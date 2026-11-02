@@ -10,6 +10,14 @@ function setup(){
   const peer=(id:string)=>{const states:QueueState[]=[],matches:Room[]=[];const p:QueuePeer={id,identity:{userId:id,username:id,expiresAt:Infinity},queue:s=>states.push(s),attach:r=>matches.push(r)};queue.connect(p);return{p,states,matches};};
   return{queue,rooms,peer,advance:(ms:number)=>{now+=ms;queue.tick();}};
 }
+
+test('rematches reset the completed-room expiry timer and retain both seats',()=>{
+  const {queue,peer,advance,rooms}=setup(),a=peer('A'),b=peer('B');queue.join(a.p,'standard');queue.join(b.p,'standard');
+  const room=a.matches[0],ids=[...room.players.keys()];room.ready(ids[0]);room.ready(ids[1]);room.cancel('Test finish');advance(1);advance(299000);
+  room.ready(ids[0]);room.ready(ids[1]);assert.equal(room.phase,'countdown');advance(1000);room.cancel('Second finish');advance(1);advance(1000);
+  assert.equal(rooms.size,1);assert.equal(queue.hasActivity('A'),true);assert.equal(queue.hasActivity('B'),true);
+  advance(300000);assert.equal(rooms.size,0);
+});
 test('compatible humans pair once, duplicate entry is idempotent, mode mismatch stays queued and cancel wins its race',()=>{
   const {queue,rooms,peer}=setup(),a=peer('A'),b=peer('B'),c=peer('C');
   assert.ok(queue.join(a.p,'standard').ok);assert.ok(queue.join(a.p,'standard').ok);queue.join(b.p,'heavy');assert.equal(rooms.size,0);

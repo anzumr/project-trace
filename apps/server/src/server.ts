@@ -20,7 +20,7 @@ export function createGameServer(options: { serveClient?: boolean; verifyIdentit
   const outbox = new ResultOutbox(options.outboxDirectory ?? resolve('.trace-data/outbox'), options.resultSink ?? providerResultSink());
   const makeRoom = (kind: 'private' | 'public' | 'ai' = 'private') => {
     let code: string; do { code = Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[randomInt(32)]).join(''); } while (rooms.has(code));
-    return new Room(code, { kind, onResult: (result, room) => outbox.enqueue(result, state => { room.resultState = state; }) });
+    return new Room(code, { kind, onResult: (result, room) => outbox.enqueue(result, state => { if(room.matchId===result.id)room.resultState = state; }) });
   };
   const matchmaking = new Matchmaking(rooms, makeRoom, () => outbox.available, options.queueClock);
   const occupied = (uid: string) => [...rooms.values()].some(r => [...r.players.values()].some(p => p.accountId === uid && p.state.connected !== false));
@@ -91,7 +91,7 @@ export function createGameServer(options: { serveClient?: boolean; verifyIdentit
       if (!found.add(socket.id, identity)) { reply({ ok: false, error: 'Room is full, already in progress, or this account is already in it.' }); return; }
       room = found; socket.join(code); reply({ ok: true, snapshot: room.snapshot() }); io.to(code).emit('snapshot', room.snapshot());
     });
-    socket.on('ready', revision => { if (!room || typeof revision !== 'number') return; room.ready(playerId, revision); io.to(room.code).emit('snapshot', room.snapshot()); });
+    socket.on('ready', revision => { if (!room || typeof revision !== 'number') return; if(rooms.get(room.code)!==room){socket.emit('notice','Room expired. Leave this room and find another match.');return;} room.ready(playerId, revision); io.to(room.code).emit('snapshot', room.snapshot()); });
     socket.on('selectMode', mode => { if (!room) return; if (!room.selectMode(playerId, mode)) socket.emit('notice', 'Only the host can change mode before a match.'); else io.to(room.code).emit('snapshot', room.snapshot()); });
     socket.on('setName', name => { if (!room) return; room.setName(playerId, name); io.to(room.code).emit('snapshot', room.snapshot()); });
     socket.on('input', input => !room?.paused && room?.accept(playerId, input, performance.now()));

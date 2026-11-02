@@ -1,0 +1,25 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '../auth/client';
+import { socialError } from '../auth/useSocial';
+import { Back } from './icons';
+
+type Entry={rank:number;user_id:string;username:string;wins:number;losses:number;win_rate:number;loss_rate:number;accuracy:number|null;damage:number;streak:number|null};
+const percent=(value:number|null)=>value===null?'—':`${Number(value).toFixed(1)}%`;
+export function LeaderboardScreen({userId,back,openAccount}:{userId?:string;back:()=>void;openAccount:()=>void}){
+  const [scope,setScope]=useState('global'),[kind,setKind]=useState('public'),[sort,setSort]=useState('wins'),[min,setMin]=useState(1),[offset,setOffset]=useState(0),[revision,setRevision]=useState(0);
+  const [rows,setRows]=useState<Entry[]>([]),[loading,setLoading]=useState(false),[error,setError]=useState('');
+  useEffect(()=>{
+    let alive=true;setRows([]);setError('');
+    if(!userId || !supabase){setLoading(false);return;}
+    setLoading(true);void(async()=>{try{const result=await supabase!.rpc('leaderboard',{p_scope:scope,p_kind:kind,p_sort:sort,p_min:min,p_offset:offset});if(!alive)return;if(result.error)setError(socialError(result.error));else setRows(result.data??[]);}catch{if(alive)setError('Could not load rankings. Check your connection and retry.');}finally{if(alive)setLoading(false);}})();
+    return()=>{alive=false;};
+  },[userId,scope,kind,sort,min,offset,revision]);
+  return <section className="wrap leaderboard"><button className="back-link" onClick={back}><Back size={16}/>BACK</button><div className="page-head"><h1 className="display">Leaderboards</h1><p>Saved match stats across every character mode. Cancelled matches and offline practice are excluded.</p></div>
+    {!userId?<div className="social-card"><p>Sign in to see global rankings and compare with friends.</p><button className="btn-primary" onClick={openAccount}>SIGN IN / ACCOUNT</button></div>:<>
+      <div className="leaderboard-filters"><label>Players<select aria-label="Players" value={scope} onChange={e=>{setScope(e.target.value);setOffset(0);}}><option value="global">Global</option><option value="friends">Friends + you</option></select></label><label>Matches<select aria-label="Matches" value={kind} onChange={e=>{setKind(e.target.value);setOffset(0);}}><option value="public">Quick Play</option><option value="private">Private duels</option><option value="ai">Extra Hard AI</option></select></label><label>Rank by<select aria-label="Rank by" value={sort} onChange={e=>{setSort(e.target.value);setOffset(0);}}><option value="wins">Wins</option><option value="win_rate">Win percentage</option><option value="accuracy">Tracking accuracy</option><option value="damage">Damage dealt</option><option value="streak">Longest tracking streak</option></select></label><label>Minimum matches<select aria-label="Minimum matches" value={min} onChange={e=>{setMin(Number(e.target.value));setOffset(0);}}>{[1,10,25,100].map(n=><option value={n} key={n}>{n}</option>)}</select></label><button className="btn-ghost" disabled={loading} onClick={()=>setRevision(r=>r+1)}>Refresh rankings</button></div>
+      <p className="note">Win / loss percentages include forfeits. Accuracy is on-target firing time divided by attack time. Ties use wins, then username.</p>
+      {error&&<p className="error" role="alert">{error}</p>}{loading?<p role="status">Loading rankings…</p>:!error&&<div className="leaderboard-table"><table><caption>{scope==='friends'?'Friends':'Global'} · {kind==='public'?'Quick Play':kind==='private'?'Private duels':'Extra Hard AI'}</caption><thead><tr>{['Rank','Player','Wins','Losses','Win %','Loss %','Accuracy','Damage','Best streak'].map(h=><th key={h} scope="col">{h}</th>)}</tr></thead><tbody>{rows.map(r=><tr key={r.user_id} className={r.user_id===userId?'self':''}><td>{r.rank}</td><th scope="row">{r.username}{r.user_id===userId?' (you)':''}</th><td>{r.wins}</td><td>{r.losses}</td><td>{percent(r.win_rate)}</td><td>{percent(r.loss_rate)}</td><td>{percent(r.accuracy)}</td><td>{Number(r.damage).toLocaleString(undefined,{maximumFractionDigits:1})}</td><td>{r.streak===null?'—':`${Number(r.streak).toFixed(2)}s`}</td></tr>)}{rows.length===0&&<tr><td colSpan={9}>No players meet these filters yet. Complete a match or lower the minimum.</td></tr>}</tbody></table></div>}
+      <div className="social-toolbar"><button className="btn-ghost" disabled={loading||offset===0} onClick={()=>setOffset(o=>Math.max(0,o-50))}>Previous</button><span>Page {offset/50+1}</span><button className="btn-ghost" disabled={loading||rows.length<50||offset>=100000} onClick={()=>setOffset(o=>o+50)}>Next</button></div>
+    </>}
+  </section>;
+}

@@ -47,7 +47,7 @@ try{
     console.log('Live mode: temporary QA accounts authenticated and usernames claimed. Credentials are kept in memory.');
   }else{
   await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key,email_confirmed_at timestamptz);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;`);
-  for(const name of ['202610270001_accounts.sql','202610280001_match_results.sql','202610310001_combat_stats.sql','202611010001_permanent_usernames.sql'])await db.exec(await readFile(resolve('supabase/migrations',name),'utf8'));
+  for(const name of ['202610270001_accounts.sql','202610280001_match_results.sql','202610310001_combat_stats.sql','202611010001_permanent_usernames.sql','202611020001_social_leaderboards.sql'])await db.exec(await readFile(resolve('supabase/migrations',name),'utf8'));
   for(let i=0;i<2;i++){await db.query('insert into auth.users values($1,now())',[ids[i]]);await db.query('insert into public.profiles(user_id,username_display) values($1,$2)',[ids[i],names[i]]);}
   }
   process.env.ALLOWED_ORIGINS='http://127.0.0.1:4187';
@@ -70,7 +70,19 @@ try{
     await context.addInitScript(({session,key})=>{localStorage.setItem(key,JSON.stringify(session));if(!localStorage.getItem('trace.settings'))localStorage.setItem('trace.settings',JSON.stringify({graphics:'competitive',frameCap:60,renderScale:0.5}));},{session,key:`sb-${new URL(providerUrl).hostname.split('.')[0]}-auth-token`});
     if(!live)await context.route('https://trace-browser.test/**',async route=>{
       const path=new URL(route.request().url()).pathname;let data:unknown=[];
-      if(path==='/rest/v1/profiles')data=(await db.query('select * from public.profiles where user_id=$1',[ids[i]])).rows;
+      if(path.startsWith('/rest/v1/rpc/')){
+        try{
+          data=await db.transaction(async tx=>{
+            await tx.exec('set local role authenticated');await tx.query("select set_config('request.jwt.claim.sub',$1,true)",[ids[i]]);
+            const args=route.request().postDataJSON()??{};
+            if(path.endsWith('/social_state'))return (await tx.query<{value:unknown}>('select public.social_state() value')).rows[0].value;
+            if(path.endsWith('/social_action')){await tx.query('select public.social_action($1,$2,$3,$4)',[args.p_action,args.p_username,args.p_target,args.p_code]);return null;}
+            if(path.endsWith('/leaderboard'))return (await tx.query('select * from public.leaderboard($1,$2,$3,$4,$5)',[args.p_scope,args.p_kind,args.p_sort,args.p_min,args.p_offset])).rows;
+            throw new Error('Unknown RPC');
+          });
+        }catch(error){await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({message:error instanceof Error?error.message:'RPC failed'})});return;}
+      }
+      else if(path==='/rest/v1/profiles')data=(await db.query('select * from public.profiles where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/player_progress')data=(await db.query('select * from public.player_progress where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/player_combat_stats')data=(await db.query('select * from public.player_combat_stats where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/player_stats')data=(await db.query('select * from public.player_stats where user_id=$1',[ids[i]])).rows;
@@ -97,6 +109,17 @@ try{
   };
 
   const quickPlay=async(page:Page)=>{await page.getByRole('button',{name:/^PLAY Quick Play/}).click();await page.getByRole('button',{name:'FIND MATCH',exact:true}).click();};
+  for(const page of pages)await page.getByRole('button',{name:/^Friends/}).click();
+  await a.getByLabel('Add by exact username').fill(names[1]);await a.getByRole('button',{name:'SEND REQUEST',exact:true}).click();await a.getByText('Friend request sent.',{exact:true}).waitFor();
+  await b.getByRole('button',{name:'Refresh friends',exact:true}).click();await b.getByRole('button',{name:'Accept',exact:true}).click();await b.getByText('Friend added.',{exact:true}).waitFor();
+  await a.getByRole('button',{name:'Refresh friends',exact:true}).click();await a.getByRole('button',{name:'Invite to duel',exact:true}).click();await a.getByText(/^Invitation sent to/).waitFor();
+  await b.getByRole('button',{name:'Refresh friends',exact:true}).click();await b.getByRole('button',{name:'Join duel',exact:true}).waitFor();
+  await a.screenshot({path:resolve('test-results/social-hub.png')});
+  await b.getByRole('button',{name:'Join duel',exact:true}).click();
+  for(const page of pages)await page.getByRole('heading',{name:'Ready up',exact:true}).waitFor();
+  assert.equal(server.rooms.size,1);assert.equal([...server.rooms.values()][0].kind,'private');
+  for(const page of pages)await page.getByRole('button',{name:'Leave room',exact:true}).click();
+  console.log('PASS: friend request, accept, private duel invitation and join through both browsers.');
   await quickPlay(a);await a.getByRole('button',{name:'Cancel matchmaking',exact:true}).waitFor();
   await a.getByRole('button',{name:'Cancel matchmaking',exact:true}).click();await a.getByRole('button',{name:'FIND MATCH',exact:true}).waitFor();assert.equal(server.rooms.size,0);
   await a.getByRole('button',{name:'FIND MATCH',exact:true}).click();await quickPlay(b);
@@ -135,8 +158,17 @@ try{
   assert.equal(decoded.buffers,4);assert.equal(decoded.state,'running');assert.equal(decoded.events.filter((e:any)=>e.kind==='kill').length,2);
   console.log('PASS: four supplied OGG files decode in Chrome; authoritative round comparisons, persisted round stats and exactly two kill audio events.');
   console.log('PASS: browser-driven human duel completes through authoritative damage; PostgreSQL records one result and 100/40 XP.');
-  await a.getByRole('button',{name:'RETURN TO MATCH MENU',exact:true}).click();await b.getByRole('button',{name:'RETURN TO MATCH MENU',exact:true}).click();
+  await a.getByRole('button',{name:'REMATCH',exact:true}).click();await a.getByRole('button',{name:'WAITING FOR OPPONENT…',exact:true}).waitFor();
+  const firstMatch=room.matchId;
+  await b.getByRole('button',{name:'ACCEPT REMATCH',exact:true}).click();await until(()=>room.phase==='countdown');assert.notEqual(room.matchId,firstMatch);assert.equal(room.match,2);
+  // Cancel before live play so the rematch exercises consent without changing the fixture's win/XP totals.
   await a.getByRole('button',{name:'Leave room',exact:true}).click();await b.getByRole('button',{name:'Leave room',exact:true}).click();
+  await until(()=>server!.rooms.size===0);
+  await a.getByRole('button',{name:'Leaderboards',exact:true}).click();await a.getByRole('cell',{name:names[0]+' (you)',exact:true}).or(a.getByRole('rowheader',{name:names[0]+' (you)',exact:true})).waitFor();
+  await a.getByLabel('Players',{exact:true}).selectOption('friends');await a.getByRole('rowheader',{name:names[1],exact:true}).waitFor();
+  await a.getByLabel('Rank by',{exact:true}).selectOption('win_rate');await a.getByRole('rowheader',{name:names[0]+' (you)',exact:true}).waitFor();
+  await a.screenshot({path:resolve('test-results/leaderboards.png')});await a.getByRole('button',{name:'BACK',exact:true}).click();
+  console.log('PASS: two-player rematch consent, fresh match identity, and saved results on friends leaderboard.');
   await quickPlay(a);clockOffset+=BOT_WAIT_MS-1000;server.matchmaking.tick();
   assert.equal(await a.getByRole('button',{name:'CHALLENGE EXTRA HARD AI [BOT]',exact:true}).count(),0);
   clockOffset+=1100;server.matchmaking.tick();await a.getByRole('button',{name:'CHALLENGE EXTRA HARD AI [BOT]',exact:true}).waitFor();

@@ -13,6 +13,9 @@ import { loadSettings, lockCodes } from './ui/settings';
 import { SettingsPanel } from './ui/SettingsPanel';
 import { useAccount } from './auth/useAccount';
 import { useProgress } from './auth/useProgress';
+import { useSocial } from './auth/useSocial';
+import { SocialScreen } from './ui/SocialScreen';
+import { LeaderboardScreen } from './ui/LeaderboardScreen';
 import { AccountPanel } from './auth/AccountPanel';
 import { Diagnostics } from './ui/Diagnostics';
 import { Crosshair } from './ui/Crosshair';
@@ -25,11 +28,12 @@ import { RoomScreen } from './ui/RoomScreen';
 import { Back } from './ui/icons';
 import type { QueueState, Snapshot } from '@trace/shared/protocol';
 
-type Screen = 'home' | 'play' | 'settings' | 'account';
+type Screen = 'home' | 'play' | 'settings' | 'account' | 'social' | 'leaderboard';
 
 function App() {
   const account = useAccount();
   const progress = useProgress(account.profile?.user_id);
+  const social = useSocial(account.profile?.user_id);
   const [queue, setQueue] = useState<QueueState>({ state: 'idle', elapsedMs: 0, botEligible: false, serverTime: 0 });
   const queuing = queue.state !== 'idle';
   const host = useRef<HTMLDivElement>(null), engine = useRef<Engine | null>(null);
@@ -58,6 +62,7 @@ function App() {
   useEffect(() => { engine.current?.network.setAccount(account.session?.user.id ?? null, account.session?.access_token); }, [account.session?.user.id, account.session?.access_token]);
   useEffect(() => { if (account.recovery) setScreen('account'); }, [account.recovery]);
   useEffect(() => { if (room) setScreen(s => s === 'play' ? 'home' : s); }, [room?.code]);
+  useEffect(() => { if(room?.players.length===2)setScreen(s=>s==='social'?'home':s); },[room?.players.length]);
   useEffect(() => { if (room?.resultState === 'saved') progress.refresh(); }, [room?.resultState, room?.matchId]);
   const enter = () => { setError(''); void engine.current?.engage(); };
   const startPractice = () => { setPracticeSummary(null); setPracticeActive(true); setScreen('home'); enter(); };
@@ -70,6 +75,8 @@ function App() {
   const home = () => setScreen('home');
   let view: ReactNode;
   if (screen === 'settings') view = <SettingsPanel settings={settings} change={setSettings} exportReport={() => engine.current?.exportDiagnostics()} back={home} openAccount={() => setScreen('account')}/>;
+  else if (screen === 'social') view = <SocialScreen key={account.profile?.user_id??'guest'} social={social} signedIn={!!account.profile} network={engine.current?.network} room={room} blocked={queuing||practiceActive||busy||!engine.current} back={home} openAccount={()=>setScreen('account')} joined={home}/>;
+  else if (screen === 'leaderboard') view = <LeaderboardScreen key={account.profile?.user_id??'guest'} userId={account.profile?.user_id} back={home} openAccount={()=>setScreen('account')}/>;
   else if (screen === 'account') view = <div className="wrap"><button className="back-link" onClick={home}><Back size={16}/>BACK</button><div className="page-head" style={{ marginBottom: 24 }}><h1 className="display">Account</h1><p>One identity across your computers. Settings stay on each browser.</p></div><AccountPanel account={account} inRoom={!!room || queuing} progress={progress}/></div>;
   else if (room) view = <RoomScreen room={room} me={me} opponent={opponent} enter={enter} ready={() => { engine.current?.network.ready(); enter(); }} leave={() => { engine.current?.network.leave(); setError(''); }} choose={mode => engine.current?.network.selectMode(mode)}/>;
   else if (queuing) view = <QueueScreen queue={queue} network={engine.current?.network} keys={settings.keys}/>;
@@ -84,9 +91,9 @@ function App() {
     {hud.locked && <Crosshair settings={settings}/>}{settings.diagnostics && <Diagnostics hud={hud}/>}
     {room?.paused && <div className="network-warning" role="status">{matchMessage(room)}</div>}
     {room && hud.diagnostics && hud.diagnostics.snapshotAge > 1000 && <div className="network-warning" role="status">Connection stalled - movement and firing paused</div>}
-    {room && showResults && <RoundResults room={room} ownId={me?.id} close={()=>setDismissedMatch(room.matchId??'')}/>}
+    {room && showResults && <RoundResults room={room} ownId={me?.id} close={()=>setDismissedMatch(room.matchId??'')} rematch={()=>engine.current?.network.ready()}/>}
     {practiceSummary && <PracticeResults summary={practiceSummary} close={()=>setPracticeSummary(null)} again={startPractice}/>}
-    {menuOpen && <><TopBar account={account} progress={progress} room={room} queuing={queuing} ping={hud.ping} fps={hud.fps} fullscreen={fullscreen} toggleFullscreen={() => void toggleFullscreen()} home={home} openAccount={() => setScreen('account')} openSettings={() => setScreen('settings')}/>
+    {menuOpen && <><TopBar account={account} progress={progress} room={room} queuing={queuing} ping={hud.ping} fps={hud.fps} fullscreen={fullscreen} toggleFullscreen={() => void toggleFullscreen()} home={home} openAccount={() => setScreen('account')} openSettings={() => setScreen('settings')} openSocial={()=>setScreen('social')} openLeaderboard={()=>setScreen('leaderboard')} socialCount={social.count}/>
       <main className="screen">{view}</main></>}
     {menuOpen && error && <p role="alert" className="toast-error">{error}</p>}
   </>;

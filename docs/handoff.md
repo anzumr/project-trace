@@ -4,6 +4,10 @@ Work done with Claude Code from 31 Oct to 2 Nov 2026, on top of the Codex baseli
 
 ## Where things stand
 
+### Local continuation, 2 November 2026
+
+Added human Quick Play rematches (including direct final-results controls), a Friends hub with username requests and private-duel invitations, and global/friends leaderboards with separate Quick Play/private/AI stats. See `docs/social-leaderboards.md` for flows, security and verification. **The user confirmed applying `202611020001_social_leaderboards.sql` in Supabase on 2 November 2026; all five migrations are now reported applied.** Deployment from `codex/initial-release` was authorized by the user on 2 November 2026. Confirm the Render rollout and live health after pushing. The table below describes the preceding handoff baseline.
+
 | | |
 |---|---|
 | Repository | `anzumr/project-trace` (private), branch `codex/initial-release` |

@@ -99,7 +99,7 @@ export class Matchmaking {
       if(room.phase==='finished'){
         times.finished??=now;
         if(now-times.finished>=300_000){for(const [uid,seat] of this.seats)if(seat.room===room)this.seats.delete(uid);this.rooms.delete(room.code);this.roomTimes.delete(room);}
-      }
+      }else times.finished=undefined;
     }
   }
   private cleanup(room:Room){if(![...this.seats.values()].some(s=>s.room===room)){this.rooms.delete(room.code);this.roomTimes.delete(room);}}

@@ -90,7 +90,7 @@ export class Room {
     return true;
   }
   ready(id: string, revision = this.modeRevision) {
-    if (this.paused || (this.kind !== 'private' && this.phase === 'finished')) return;
+    if (this.paused || [...this.players.values()].some(p => p.state.connected === false) || (this.kind === 'ai' && this.phase === 'finished')) return;
     if (revision !== this.modeRevision) return;
     const p = this.players.get(id); if (!p || !['lobby', 'finished'].includes(this.phase) || this.players.size !== 2) return;
     p.state.ready = true;
