@@ -9,7 +9,7 @@ import { Network } from '../net/Network';
 import { TargetHealth } from './TargetHealth';
 import { FrameGate, FrameMetrics, type FrameStats } from './Performance';
 
-import type { Settings } from '../ui/settings';
+import { normalizeKey, type Settings } from '../ui/settings';
 export type { Settings } from '../ui/settings';
 export type PracticeSummary = { duration:number; stats:CombatStats; waves:number; average:number|null; best:number|null; worst:number|null };
 export type Hud = { combat?:CombatStats; lastWave?:{wave:number;stats:CombatStats}|null;  hp: number; ownHp: number; hit: boolean; headshot: boolean; locked: boolean; seconds: number; damage: number; fps: number; ping: number; wave: number; kills: number; speed: number; size: number; circle: boolean; diagnostics?: FrameStats & { skippedTicks:number; serverSkippedTicks:number; serverTickMs:number; drawCalls:number; snapshotAge:number; connection:string } };
@@ -140,9 +140,16 @@ export class Engine {
   }
   reset() { if (this.network.snapshot) return; this.practice = new Practice(); this.practiceSession++; this.hp = CONFIG.hp; this.ownHp = CONFIG.hp; this.tracked = 0; this.totalDamage = 0; this.body = spawn(); this.yaw = 0; this.pitch = 0; this.hit = false; this.firing = false; this.keys.clear(); this.jump = false; }
   private resize = () => { const w = this.host.clientWidth, h = this.host.clientHeight; this.renderer.setSize(w, h); this.camera.aspect = w / Math.max(1, h); this.camera.updateProjectionMatrix(); };
-  private keydown = (e: KeyboardEvent) => { if (!this.locked) return; if (['KeyW','KeyA','KeyS','KeyD','Space','KeyC','ControlLeft','ControlRight'].includes(e.code)) e.preventDefault(); this.keys.add(e.code); if (e.code === 'Space' && !e.repeat) this.jump = true; };
-  private keyup = (e: KeyboardEvent) => { this.keys.delete(e.code); };
-  private get crouching() { return this.keys.has('ControlLeft') || this.keys.has('ControlRight') || this.keys.has('KeyC'); }
+  private keydown = (e: KeyboardEvent) => {
+    if (!this.locked) return;
+    const code = normalizeKey(e.code), k = this.settings.keys;
+    // Bound keys never trigger page shortcuts (Ctrl+S, Ctrl+D, Space scroll); Ctrl+W can only be kept in fullscreen.
+    if (Object.values(k).includes(code)) e.preventDefault();
+    this.keys.add(code); if (code === k.jump && !e.repeat) this.jump = true;
+  };
+  private keyup = (e: KeyboardEvent) => { this.keys.delete(normalizeKey(e.code)); };
+  private get crouching() { return this.keys.has(this.settings.keys.crouch); }
+  private axis(positive: string, negative: string) { return Number(this.keys.has(positive)) - Number(this.keys.has(negative)); }
   /** Ctrl crouches, and outside fullscreen Ctrl+W would close the tab: ask before leaving mid-game. */
   private beforeUnload = (e: BeforeUnloadEvent) => { const phase = this.network.snapshot?.phase; if (this.locked || (phase && !['lobby', 'finished'].includes(phase))) { e.preventDefault(); e.returnValue = ''; } };
   private mouse = (e: MouseEvent) => { if (!this.locked) return; this.yaw -= e.movementX * this.settings.sensitivity; this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * this.settings.sensitivity * (this.settings.invert ? -1 : 1), -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01); };
@@ -154,7 +161,7 @@ export class Engine {
   private contextLost = (event: Event) => { event.preventDefault();this.blur();this.onError('Graphics context lost. Reload the page to restore the arena.'); };
   private direction = new THREE.Vector3();
   private input(active: boolean): PlayerInput {
-    return { seq: ++this.seq, forward: active ? Number(this.keys.has('KeyW')) - Number(this.keys.has('KeyS')) : 0, strafe: active ? Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA')) : 0, jump: active && this.jump, crouch: active && this.crouching, yaw: Math.atan2(Math.sin(this.yaw), Math.cos(this.yaw)), pitch: this.pitch, firing: active && this.firing, active, view: this.network.viewTick };
+    return { seq: ++this.seq, forward: active ? this.axis(this.settings.keys.forward, this.settings.keys.back) : 0, strafe: active ? this.axis(this.settings.keys.right, this.settings.keys.left) : 0, jump: active && this.jump, crouch: active && this.crouching, yaw: Math.atan2(Math.sin(this.yaw), Math.cos(this.yaw)), pitch: this.pitch, firing: active && this.firing, active, view: this.network.viewTick };
   }
   private loop = (now: number) => {
     if (this.disposed) return;
@@ -178,7 +185,7 @@ export class Engine {
         continue;
       }
       if (this.locked) {
-        move(this.body, { forward: Number(this.keys.has('KeyW')) - Number(this.keys.has('KeyS')), strafe: Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA')), jump: this.jump, crouch: this.crouching, yaw: this.yaw }, CONFIG.tick); this.jump = false;
+        move(this.body, { forward: this.axis(this.settings.keys.forward, this.settings.keys.back), strafe: this.axis(this.settings.keys.right, this.settings.keys.left), jump: this.jump, crouch: this.crouching, yaw: this.yaw }, CONFIG.tick); this.jump = false;
       }
       this.camera.position.set(this.body.x, this.body.y + eyeHeight(this.body), this.body.z);
       this.camera.rotation.set(this.pitch, this.yaw, 0); this.camera.getWorldDirection(this.direction);

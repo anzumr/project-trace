@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Engine, type Hud, type PracticeSummary } from './game/Engine';
 import './style.css';
-import { loadSettings } from './ui/settings';
+import { loadSettings, lockCodes } from './ui/settings';
 import { SettingsPanel } from './ui/SettingsPanel';
 import { useAccount } from './auth/useAccount';
 import { useProgress } from './auth/useProgress';
@@ -47,8 +47,8 @@ function App() {
       if (document.fullscreenElement) await document.exitFullscreen();
       else {
         await document.documentElement.requestFullscreen();
-        // In fullscreen, Chromium browsers let the game keep Ctrl+W (crouch + forward) instead of closing the tab.
-        await (navigator as Navigator & { keyboard?: { lock?: (codes?: string[]) => Promise<void> } }).keyboard?.lock?.(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'Space', 'ControlLeft', 'ControlRight']).catch(() => {});
+        // In fullscreen, Chromium browsers let the game keep shortcuts on bound keys (e.g. Ctrl+W) instead of closing the tab.
+        await (navigator as Navigator & { keyboard?: { lock?: (codes?: string[]) => Promise<void> } }).keyboard?.lock?.(lockCodes(settings.keys)).catch(() => {});
       }
     }
     catch { setError('Fullscreen was unavailable. Try your browser’s fullscreen shortcut (F11).'); }
@@ -72,12 +72,12 @@ function App() {
   if (screen === 'settings') view = <SettingsPanel settings={settings} change={setSettings} exportReport={() => engine.current?.exportDiagnostics()} back={home} openAccount={() => setScreen('account')}/>;
   else if (screen === 'account') view = <div className="wrap"><button className="back-link" onClick={home}><Back size={16}/>BACK</button><div className="page-head" style={{ marginBottom: 24 }}><h1 className="display">Account</h1><p>One identity across your computers. Settings stay on each browser.</p></div><AccountPanel account={account} inRoom={!!room || queuing} progress={progress}/></div>;
   else if (room) view = <RoomScreen room={room} me={me} opponent={opponent} enter={enter} ready={() => { engine.current?.network.ready(); enter(); }} leave={() => { engine.current?.network.leave(); setError(''); }} choose={mode => engine.current?.network.selectMode(mode)}/>;
-  else if (queuing) view = <QueueScreen queue={queue} network={engine.current?.network}/>;
+  else if (queuing) view = <QueueScreen queue={queue} network={engine.current?.network} keys={settings.keys}/>;
   else if (practiceActive) view = <PauseMenu wave={hud.wave} kills={hud.kills} resume={enter} restart={() => { engine.current?.reset(); enter(); }} end={() => { const summary = engine.current?.endPractice(); if (summary) setPracticeSummary(summary); setPracticeActive(false); }} settings={() => setScreen('settings')} menu={() => setPracticeActive(false)}/>;
   else if (screen === 'play') view = <PlayScreen network={engine.current?.network} quickPlay={!!account.profile && !account.loading} signedIn={!!account.session} username={account.profile?.username_display} busy={busy}
     roomBlocked={queuing || busy || !engine.current || account.loading || (!!account.session && !account.profile)} playerName={playerName} setPlayerName={setPlayerName} code={code} setCode={setCode}
     createRoom={() => void openRoom()} joinRoom={() => void openRoom(code)} practice={startPractice} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} back={home} openAccount={() => setScreen('account')}/>;
-  else view = <HomeScreen account={account} progress={progress} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} play={() => setScreen('play')} practice={startPractice} privateRoom={() => setScreen('play')} settings={() => setScreen('settings')} openAccount={() => setScreen('account')}/>;
+  else view = <HomeScreen account={account} progress={progress} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} keys={settings.keys} play={() => setScreen('play')} practice={startPractice} privateRoom={() => setScreen('play')} settings={() => setScreen('settings')} openAccount={() => setScreen('account')}/>;
   return <><div ref={host} className="arena"/>
     {menuOpen ? <div className={`backdrop${overMatch ? ' over-match' : ''}`}>{screen === 'home' && !room && !queuing && !practiceActive && <svg aria-hidden="true" viewBox="0 0 1440 900" preserveAspectRatio="xMinYMin slice"><line x1="0" y1="330" x2="1440" y2="330" stroke="#14303d"/><line x1="460" y1="0" x2="460" y2="900" stroke="#14303d"/><circle cx="460" cy="330" r="236" fill="none" stroke="#e5212e" strokeOpacity="0.18" strokeWidth="1.5"/><circle cx="460" cy="330" r="300" fill="none" stroke="#14303d"/></svg>}</div> : <div className="vignette"/>}
     {(hud.locked || showResults) && <CombatHud hud={hud} room={room} ownId={me?.id} settings={settings}/>}

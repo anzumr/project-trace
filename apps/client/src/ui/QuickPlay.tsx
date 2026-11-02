@@ -3,8 +3,9 @@ import { MODES } from '@trace/shared';
 import type { QueueState } from '@trace/shared/protocol';
 import type { Network } from '../net/Network';
 import { Controls } from './HomeScreen';
+import type { Keybinds } from './settings';
 
-export function QueueScreen({queue,network}:{queue:QueueState;network?:Network}) {
+export function QueueScreen({queue,network,keys}:{queue:QueueState;network?:Network;keys:Keybinds}) {
   const [busy,setBusy]=useState(false),[keepSearching,setKeepSearching]=useState(false);
   const action=async(task:()=>Promise<void>)=>{setBusy(true);try{await task();}finally{setBusy(false);}};
   const seconds=Math.floor(queue.elapsedMs/1000),reconnecting=queue.state==='reconnecting';
@@ -20,6 +21,6 @@ export function QueueScreen({queue,network}:{queue:QueueState;network?:Network})
     {queue.botEligible && keepSearching && <button className="link-button" onClick={()=>setKeepSearching(false)}>Show optional AI challenge</button>}
     {!queue.botEligible && <p className="note" style={{marginTop:8}}>After five minutes you can choose an AI match or keep waiting for a human.</p>}
     <div className="room-actions"><button className="btn-ghost" disabled={busy} onClick={()=>void action(()=>network!.cancelQueue())}>Cancel matchmaking</button></div>
-    <div style={{marginTop:40}}><Controls/></div>
+    <div style={{marginTop:40}}><Controls keys={keys}/></div>
   </section>;
 }

@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Crosshair } from './Crosshair';
 import { MARKER } from './CombatHud';
-import { Controls } from './HomeScreen';
-import { defaults, PRESETS, STYLES, type Settings } from './settings';
+import { ACTIONS, ACTION_LABELS, defaults, keyLabel, normalizeKey, PRESETS, rebind, reservedKey, STYLES, type Action, type Settings } from './settings';
 
 type Section = 'controls' | 'crosshair' | 'audio' | 'graphics';
 type NumberKey = 'size' | 'opacity' | 'thickness' | 'gap' | 'outlineWidth' | 'sensitivity' | 'hitOpacity' | 'masterVolume' | 'sfxVolume' | 'hitRate' | 'renderScale';
@@ -15,10 +14,25 @@ const percent = (v: number) => `${Math.round(v * 100)}%`;
 
 export function SettingsPanel({ settings: s, change, exportReport, back, openAccount }: { settings: Settings; change: (settings: Settings) => void; exportReport: () => void; back: () => void; openAccount: () => void }) {
   const [section, setSection] = useState<Section>('crosshair');
+  const [listening, setListening] = useState<Action | null>(null), [bindError, setBindError] = useState('');
+  useEffect(() => {
+    if (!listening) return;
+    // Capture the next key press for the chosen action; Escape cancels.
+    const capture = (e: KeyboardEvent) => {
+      e.preventDefault(); e.stopPropagation();
+      if (e.code === 'Escape') { setListening(null); return; }
+      if (!/^[A-Za-z0-9]{1,24}$/.test(e.code)) { setBindError('That key could not be recognised. Try another key.'); return; }
+      if (reservedKey(e.code)) { setBindError(`${keyLabel(normalizeKey(e.code))} is reserved by the browser or system. Choose another key.`); return; }
+      change({ ...s, keys: rebind(s.keys, listening, e.code) }); setBindError(''); setListening(null);
+      (document.activeElement as HTMLElement | null)?.blur();
+    };
+    window.addEventListener('keydown', capture, true);
+    return () => window.removeEventListener('keydown', capture, true);
+  }, [listening, s, change]);
   const slider = (label: string, key: NumberKey, min: number, max: number, step: number, format: (v: number) => string = String) => <label className="setting-row slider">{label}<input type="range" min={min} max={max} step={step} value={s[key]} onChange={e => change({ ...s, [key]: +e.target.value })}/><output>{format(s[key])}</output></label>;
   const toggle = (label: string, key: FlagKey, hint?: string) => <label className="setting-row"><span>{label}{hint && <small>{hint}</small>}</span><input type="checkbox" role="switch" className="switch" checked={s[key]} onChange={e => change({ ...s, [key]: e.target.checked })}/></label>;
   const colors = (label: string, key: 'color' | 'hitColor', list: string[][]) => <div className="setting-row" role="group" aria-label={label}><span>{label}</span><span className="swatches">{list.map(([hex, name]) => <button key={hex} className="swatch" aria-label={name} aria-pressed={s[key].toLowerCase() === hex} style={{ background: hex }} onClick={() => change({ ...s, [key]: hex })}/>)}<input type="color" className="color-input" aria-label={`Custom ${label.toLowerCase()}`} value={s[key]} onChange={e => change({ ...s, [key]: e.target.value })}/></span></div>;
-  const nav: [Section, string][] = [['controls', 'Controls'], ['crosshair', 'Crosshair & hit feedback'], ['audio', 'Audio'], ['graphics', 'Graphics']];
+  const nav: [Section, string][] = [['controls', 'Controls & keybinds'], ['crosshair', 'Crosshair & hit feedback'], ['audio', 'Audio'], ['graphics', 'Graphics']];
   return <div className="settings-layout wrap">
     <nav className="settings-nav" aria-label="Settings sections">
       <h1 className="display">Settings</h1>
@@ -32,7 +46,17 @@ export function SettingsPanel({ settings: s, change, exportReport, back, openAcc
     {section === 'controls' && <div className="settings-body"><div className="settings-col">
       <h2 className="eyebrow">MOUSE</h2>
       <div className="setting-group">{slider('Sensitivity', 'sensitivity', 0.0003, 0.006, 0.0001, v => v.toFixed(4))}{toggle('Invert Y', 'invert')}<div className="setting-row"><span>Default sensitivity</span><button className="link-button" onClick={() => change({ ...s, sensitivity: defaults.sensitivity })}>Reset sensitivity</button></div></div>
-      <h2 className="eyebrow">KEYS</h2><div className="card"><Controls/></div>
+      <h2 className="eyebrow">KEYBINDS</h2>
+      <div className="setting-group">
+        {ACTIONS.map(action => <div className="setting-row" key={action}><span>{ACTION_LABELS[action]}</span>
+          <button className={`key-bind${listening === action ? ' listening' : ''}`} aria-label={`${ACTION_LABELS[action]}: ${keyLabel(s.keys[action])}. Click to rebind`} onClick={() => { setBindError(''); setListening(listening === action ? null : action); }} onBlur={() => setListening(current => current === action ? null : current)}>{listening === action ? 'PRESS A KEY…' : keyLabel(s.keys[action])}</button></div>)}
+        <div className="setting-row"><span>Fire</span><kbd>HOLD MOUSE 1</kbd></div>
+        <div className="setting-row"><span>Menu / release mouse</span><kbd>ESC</kbd></div>
+      </div>
+      {bindError && <p className="error" role="alert">{bindError}</p>}
+      {Object.values(s.keys).includes('Control') && <p className="note"><strong>Ctrl warning:</strong> outside the game’s fullscreen, Ctrl+W closes the browser tab, so the game asks before leaving. Use the fullscreen button in the menu, or bind another key.</p>}
+      <p className="note">Click a key, then press the new one. If another action already uses that key, the two swap. Escape cancels. Escape, Mouse 1, the Windows/Command key and F1–F12 can’t be bound.</p>
+      <button className="btn-ghost" style={{ alignSelf: 'flex-start' }} onClick={() => { setListening(null); setBindError(''); change({ ...s, keys: { ...defaults.keys } }); }}>Reset keybinds</button>
       <p className="note">Escape releases the mouse. In online matches the opponent keeps playing, so only pause in practice.</p>
     </div></div>}
 

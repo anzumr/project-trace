@@ -1,8 +1,9 @@
 import type { useAccount } from '../auth/useAccount';
 import { accuracyOf, ago, kindLabel, type Progress } from '../auth/useProgress';
 import { Arrow, Chevron, Mouse } from './icons';
+import { defaults, keyLabel, type Keybinds } from './settings';
 
-export const Controls = () => <div className="controls-row"><span><kbd>W A S D</kbd>Move</span><span><kbd>SPACE</kbd>Jump</span><span><kbd>CTRL</kbd>Crouch</span><span><kbd>HOLD MOUSE 1</kbd>Fire</span><span><kbd>ESC</kbd>Menu</span></div>;
+export const Controls = ({ keys = defaults.keys }: { keys?: Keybinds }) => <div className="controls-row"><span><kbd>{[keys.forward, keys.left, keys.back, keys.right].map(keyLabel).join(' ')}</kbd>Move</span><span><kbd>{keyLabel(keys.jump)}</kbd>Jump</span><span><kbd>{keyLabel(keys.crouch)}</kbd>Crouch</span><span><kbd>HOLD MOUSE 1</kbd>Fire</span><span><kbd>ESC</kbd>Menu</span></div>;
 
 function ProgressCard({ account, progress: p, openAccount }: { account: ReturnType<typeof useAccount>; progress: Progress; openAccount: () => void }) {
   if (!account.profile) return <section className="card" aria-label="Your account"><h2 className="card-title">{account.session ? 'FINISH YOUR ACCOUNT' : 'PLAYING AS GUEST'}</h2>
@@ -28,8 +29,8 @@ function ProgressCard({ account, progress: p, openAccount }: { account: ReturnTy
   </>;
 }
 
-export function HomeScreen({ account, progress, practiceStarted, wave, play, practice, privateRoom, settings, openAccount }: {
-  account: ReturnType<typeof useAccount>; progress: Progress; practiceStarted: boolean; wave: number;
+export function HomeScreen({ account, progress, practiceStarted, wave, keys, play, practice, privateRoom, settings, openAccount }: {
+  account: ReturnType<typeof useAccount>; progress: Progress; practiceStarted: boolean; wave: number; keys: Keybinds;
   play: () => void; practice: () => void; privateRoom: () => void; settings: () => void; openAccount: () => void;
 }) {
   return <div className="home wrap">
@@ -42,7 +43,7 @@ export function HomeScreen({ account, progress, practiceStarted, wave, play, pra
         <button className="nav-item" onClick={privateRoom}><span><strong>Private room</strong><small>Duel a friend with a room code</small></span><Chevron/></button>
         <button className="nav-item" onClick={settings}><span><strong>Settings</strong><small>Crosshair, sensitivity, audio, graphics</small></span><Chevron/></button>
       </nav>
-      <Controls/>
+      <Controls keys={keys}/>
       <p className="note" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '18px 0 0 3%', letterSpacing: 2, fontSize: 12 }}><Mouse size={16}/>DESKTOP + MOUSE REQUIRED<span style={{ marginLeft: 16 }}><a href="/privacy.html">PRIVACY</a> · <a href="/terms.html">TERMS</a></span></p>
     </div>
     <aside className="progress-aside"><ProgressCard account={account} progress={progress} openAccount={openAccount}/></aside>
