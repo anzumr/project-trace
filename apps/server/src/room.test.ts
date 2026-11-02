@@ -26,7 +26,7 @@ test('two players only, both ready, immutable client authority', () => {
   const room = new Room('ABCDE'); assert.ok(room.add('a')); assert.ok(room.add('b')); assert.equal(room.add('c'), false);
   room.ready('a'); assert.equal(room.phase, 'lobby'); room.ready('b'); assert.equal(room.phase, 'countdown'); advance(room,CONFIG.countdownSeconds); assert.equal(room.phase,'live');
   room.accept('a', { ...neutralInput(1), active: true, hp: 999, body: { x: 1000 }, hit: true }, 1000); room.step(1000);
-  assert.equal(room.players.get('a')!.state.hp, 100); assert.equal(room.players.get('a')!.state.body.x, 5);
+  assert.equal(room.players.get('a')!.state.hp, 100); assert.equal(room.players.get('a')!.state.body.x, 0);
   assert.equal(room.accept('a', { ...neutralInput(2), forward: 50 }, 1001), false);
   assert.equal(room.accept('a', { ...neutralInput(2), yaw: NaN }, 1001), false);
   assert.equal(room.accept('a', neutralInput(1), 1001), false);
@@ -47,12 +47,12 @@ test('server ray uses cover and target jump height; release and focus loss stop 
 test('server speed independent of message spam, stale input disabled', () => {
   const room = live(); const p = room.players.get('a')!;
   for (let seq = 1; seq <= 1000; seq++) room.accept('a', { ...neutralInput(seq), active: true, strafe: 1, firing: true }, 1000);
-  room.step(1000); assert.ok(p.state.body.x - 5 <= CONFIG.speed * CONFIG.tick);
+  room.step(1000); assert.ok(p.state.body.x <= CONFIG.speed * CONFIG.tick);
   room.step(1300); assert.equal(p.input.active, false); assert.equal(p.input.firing, false);
 });
 test('simultaneous KO is a draw, replay resets HP, disconnect resolves winner', () => {
   const room = live(), a = room.players.get('a')!, b = room.players.get('b')!;
-  a.state.body.x = b.state.body.x = 5; a.state.hp = b.state.hp = 0.2;
+  a.state.body.x = b.state.body.x = 5; a.state.body.z=9; b.state.body.z=-9; a.state.hp = b.state.hp = 0.2;
   room.accept('a', { ...neutralInput(1), active: true, firing: true }, 1000);
   room.accept('b', { ...neutralInput(1), active: true, firing: true, yaw: -Math.PI }, 1000);
   room.step(1000); assert.equal(room.phase, 'roundEnd'); assert.equal(room.roundWinner, null); assert.equal(a.state.hp, 0); assert.equal(b.state.hp, 0);
@@ -64,7 +64,7 @@ test('countdown freezes movement and damage, starts at 90 seconds, rejects ready
   const room=new Room('ABCDE');room.add('a');room.add('b');room.ready('a');room.ready('b');
   assert.equal(room.snapshot().remaining,3);
   assert.equal(room.accept('a',{...neutralInput(1),active:true,firing:true,strafe:1},10),false);
-  advance(room,3-CONFIG.tick);assert.equal(room.phase,'countdown');assert.equal(room.players.get('a')!.state.body.x,5);
+  advance(room,3-CONFIG.tick);assert.equal(room.phase,'countdown');assert.equal(room.players.get('a')!.state.body.x,0);
   advance(room,CONFIG.tick);assert.equal(room.phase,'live');assert.equal(room.snapshot().remaining,90);
   room.ready('a');room.ready('b');assert.equal(room.match,1);assert.equal(room.players.get('a')!.state.ready,false);
   assert.equal(room.players.get('b')!.state.hp,100);
@@ -80,7 +80,7 @@ test('timeout awards higher HP, tied timeout enters sudden death, no hit replays
 test('sudden death resolves first hit and replays simultaneous hits without awarding wins', () => {
   for(const simultaneous of [false,true]) {
     const room=live();advance(room,90);
-    const a=room.players.get('a')!,b=room.players.get('b')!;a.state.body.x=b.state.body.x=5;
+    const a=room.players.get('a')!,b=room.players.get('b')!;a.state.body.x=b.state.body.x=5;a.state.body.z=9;b.state.body.z=-9;
     const now=room.tick*CONFIG.tick*1000;
     room.accept('a',{...neutralInput(1),active:true,firing:true},now);
     room.accept('b',{...neutralInput(1),active:true,firing:simultaneous,yaw:-Math.PI},now);
@@ -91,7 +91,7 @@ test('three rounds decide 2–1, finished state is stable, rematch resets scores
   const room=live();room.setName('a','ignored while live');
   for(const [index,winner] of ['a','b','a'].entries()) {
     const a=room.players.get('a')!,b=room.players.get('b')!;
-    a.state.body.x=b.state.body.x=5;(winner==='a'?b:a).state.hp=0.2;
+    a.state.body.x=b.state.body.x=5;a.state.body.z=9;b.state.body.z=-9;(winner==='a'?b:a).state.hp=0.2;
     const now=room.tick*CONFIG.tick*1000;
     room.accept(winner,{...neutralInput(index+1),active:true,firing:true,yaw:winner==='a'?0:-Math.PI},now);room.step(now);
     assert.equal(room.roundWinner,winner);
@@ -120,7 +120,7 @@ test('only host selects modes, changes invalidate ready, stale approval cannot s
 test('server applies every shared mode to both players and keeps damage at 20 HP/s', () => {
   for(const id of Object.keys(MODES) as ModeId[]) {
     const room=new Room('ABCDE');room.add('a');room.add('b');room.selectMode('a',id);room.ready('a');room.ready('b');advance(room,3);
-    const a=room.players.get('a')!,b=room.players.get('b')!;a.state.body.x=b.state.body.x=5;
+    const a=room.players.get('a')!,b=room.players.get('b')!;a.state.body.x=b.state.body.x=5;a.state.body.z=9;b.state.body.z=-9;
     for(let i=1;i<=60;i++) { const now=room.tick*CONFIG.tick*1000;room.accept('a',{...neutralInput(i),active:true,firing:true,pitch:Math.atan2(-0.7*MODES[id].scale,18)},now);room.step(now); }
     assert.ok(Math.abs(b.state.hp-80)<1e-8,`${id}: server ray must use mode eye height and target size`);
     assert.equal(a.state.hp,100);
@@ -130,7 +130,7 @@ test('server applies every shared mode to both players and keeps damage at 20 HP
 test('multiplayer capsule and gray head use exact regions with 2x head damage in every mode', () => {
   for(const id of Object.keys(MODES) as ModeId[]) {
     const room=new Room('ABCDE');room.add('a');room.add('b');room.selectMode('a',id);room.ready('a');room.ready('b');advance(room,3);
-    const a=room.players.get('a')!,b=room.players.get('b')!;a.state.body.x=b.state.body.x=5;
+    const a=room.players.get('a')!,b=room.players.get('b')!;a.state.body.x=b.state.body.x=5;a.state.body.z=9;b.state.body.z=-9;
     for(let i=1;i<=60;i++){const now=room.tick*CONFIG.tick*1000;room.accept('a',{...neutralInput(i),active:true,firing:true},now);room.step(now);}
     assert.ok(Math.abs(b.state.hp-60)<1e-8);assert.equal(a.state.headshot,true);
     // Aim through the visible gap at local y=0.56 above the model center.
@@ -141,7 +141,7 @@ test('multiplayer capsule and gray head use exact regions with 2x head damage in
 });
 test('shots rewind a strafing target to the tick the shooter saw, within the rewind limit', () => {
   const room = live(), a = room.players.get('a')!, b = room.players.get('b')!;
-  a.state.body.x = b.state.body.x = 5;
+  a.state.body.x = b.state.body.x = 5; a.state.body.z=9; b.state.body.z=-9;
   const seen: { tick: number; x: number; y: number; z: number }[] = [];
   let now = 1000;
   for (let seq = 1; seq <= 40; seq++) { room.accept("b", { ...neutralInput(seq), active: true, strafe: seq <= 20 ? -1 : 1 }, now); room.step(now += 17); seen.push({ tick: room.tick, ...b.state.body }); }
@@ -161,7 +161,7 @@ test('shots rewind a strafing target to the tick the shooter saw, within the rew
 });
 test('crouching shrinks the server hitbox and lowers the shooter eye line', () => {
   const room = live(), a = room.players.get('a')!, b = room.players.get('b')!;
-  a.state.body.x = b.state.body.x = 5;
+  a.state.body.x = b.state.body.x = 5; a.state.body.z=9; b.state.body.z=-9;
   let now = 1000, seq = 0;
   for (let i = 0; i < 30; i++) { room.accept('b', { ...neutralInput(++seq), active: true, crouch: true }, now); room.step(now += 17); }
   assert.equal(b.state.body.crouch, 1);

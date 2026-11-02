@@ -51,7 +51,8 @@ test('real sockets: full three-round match, names, countdown, movement, damage, 
     const aim = () => { const from=me().body,to=enemy().body; ai.yaw=Math.atan2(-(to.x-from.x),-(to.z-from.z)); ai.pitch=0; };
     aim(); ai.firing=true; await sleep(500); assert.equal(enemy().hp,100,'central barrier must block shots');
     ai.firing=false; bi.strafe=-1; await until(()=>enemy().body.x>5,3000); bi.strafe=0; await sleep(400);
-    assert.equal(me().body.x,5,'moving B must not move A'); assert.ok(enemy().body.x>5);
+    assert.equal(me().body.x,0,'moving B must not move A'); assert.ok(enemy().body.x>5);
+    ai.yaw=0;ai.strafe=1;await until(()=>me().body.x>5,3000);ai.strafe=0;await sleep(400);
     bi.jump=true; await until(()=>enemy().body.y>0.2); bi.jump=false; await until(()=>enemy().body.grounded && enemy().body.y===0);
     aim(); await sleep(350); assert.equal(enemy().hp,100,'aim alone must not damage');
     ai.yaw=Math.PI/2; ai.firing=true; await sleep(350); assert.equal(enemy().hp,100,'empty ray must miss');
@@ -63,6 +64,7 @@ test('real sockets: full three-round match, names, countdown, movement, damage, 
       await until(()=>sa?.phase==='live' && sb?.phase==='live' && sa.round===round,8000);
       assert.equal(me().hp,100);assert.equal(enemy().hp,100);
       bi.strafe=-1;await until(()=>enemy().body.x>5,3000);bi.strafe=0;await sleep(400);
+      ai.yaw=0;ai.strafe=1;await until(()=>me().body.x>5,3000);ai.strafe=0;await sleep(400);
       if(round===2){const from=enemy().body,to=me().body;bi.yaw=Math.atan2(-(to.x-from.x),-(to.z-from.z));bi.firing=true;}
       else {aim();ai.firing=true;}
       await until(()=>sa?.phase===(round===3?'finished':'roundEnd') && sb?.phase===sa.phase,7000);

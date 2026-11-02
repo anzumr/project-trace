@@ -6,6 +6,8 @@ Work done with Claude Code from 31 Oct to 2 Nov 2026, on top of the Codex baseli
 
 ### Local continuation, 2 November 2026
 
+The social/rematch release was deployed as `d543518`; GitHub checks and live navigation/health passed. Subsequent local work replaces the arena with the approved closed circular map, center pillar, two spawn walls and left/right stairs to raised platforms. See `docs/circular-arena.md`. This map change requires no SQL migration; deploy the client and server together.
+
 Added human Quick Play rematches (including direct final-results controls), a Friends hub with username requests and private-duel invitations, and global/friends leaderboards with separate Quick Play/private/AI stats. See `docs/social-leaderboards.md` for flows, security and verification. **The user confirmed applying `202611020001_social_leaderboards.sql` in Supabase on 2 November 2026; all five migrations are now reported applied.** Deployment from `codex/initial-release` was authorized by the user on 2 November 2026. Confirm the Render rollout and live health after pushing. The table below describes the preceding handoff baseline.
 
 | | |

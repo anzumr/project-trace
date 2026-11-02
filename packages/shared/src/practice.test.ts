@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CONFIG, COVER, rayBox, type Vec3 } from './index';
-import { Practice, PRACTICE, BOT_MODEL, practiceProfile, practiceAgility, raySphere, rayPracticeModel, tracePracticeModel } from './practice';
+import { CONFIG, rayBox, type Vec3 } from './index';
+import { Practice, PRACTICE, practiceAllowed, BOT_MODEL, practiceProfile, practiceAgility, raySphere, rayPracticeModel, tracePracticeModel } from './practice';
 
 const PLAYER = { x: 0, y: CONFIG.eyeHeight, z: 10 };
 const look = (from: Vec3, to: Vec3) => { const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, l = Math.hypot(dx, dy, dz); return { x: dx / l, y: dy / l, z: dz / l }; };
 /** Unit vector across the player's line of sight, matching the bot's own sideways convention. */
-const across = (p: Practice) => { const m = p.motion, l = Math.hypot(m.x - PLAYER.x, m.z - PLAYER.z); return { x: -(m.z - PLAYER.z) / l, z: (m.x - PLAYER.x) / l }; };
+const across = (p: Practice, origin=PLAYER) => { const m = p.motion, l = Math.hypot(m.x - origin.x, m.z - origin.z); return { x: -(m.z - origin.z) / l, z: (m.x - origin.x) / l }; };
 
 test('upgrades alternate speed then size; small orb endpoint stays playable indefinitely', () => {
   const first = practiceProfile(1), second = practiceProfile(2), third = practiceProfile(3), fourth = practiceProfile(4);
@@ -48,12 +48,12 @@ test('practice still requires fire and cover blocks both shapes', () => {
 });
 test('random movement stays in the arena, clear of cover and the player, and covers every quadrant', () => {
   const p = new Practice({ seed: 7 }), quadrants = new Set<string>(); let minZ=Infinity,maxZ=-Infinity;
-  for (let i=0;i<120*60;i++) {
+  for (let i=0;i<300*60;i++) {
     p.step(CONFIG.tick,true,false,PLAYER,{x:0,y:0,z:-1});
     const {x,z}=p.position;
     quadrants.add(`${Math.sign(x)},${Math.sign(z)}`);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);
     assert.ok(Math.abs(x)+CONFIG.targetWidth/2<CONFIG.arenaHalf && Math.abs(z)+CONFIG.targetWidth/2<CONFIG.arenaHalf,'inside the walls');
-    assert.ok(x+0.45<COVER.min.x || x-0.45>COVER.max.x || z+0.45<COVER.min.z || z-0.45>COVER.max.z,'outside the cover');
+    assert.ok(practiceAllowed(x,z),'outside all cover and inside the circular arena');
     assert.ok(Math.hypot(x-PLAYER.x,z-PLAYER.z)>2.5,'does not run through the player');
   }
   for(const quadrant of ['1,1','1,-1','-1,1','-1,-1'])assert.ok(quadrants.has(quadrant));
@@ -81,13 +81,13 @@ test('later waves move faster and change direction more sharply', () => {
 });
 test('tracking the bot well makes it dodge away from the crosshair; untracked bots never dodge', () => {
   const run = (firing: boolean) => {
-    const p=new Practice({seed:11});let dodges=0,away=0;
+    const p=new Practice({seed:11}),viewer={x:5,y:CONFIG.eyeHeight,z:6};let dodges=0,away=0;
     for(let i=0;i<90*60;i++){
       // Aim slightly to one side of where the target is heading, still on its body.
-      const side=across(p),lead={x:p.motion.x+p.motion.vx*CONFIG.tick-side.x*0.15,y:PRACTICE.centerY,z:p.motion.z+p.motion.vz*CONFIG.tick-side.z*0.15};
+      const side=across(p,viewer),lead={x:p.motion.x+p.motion.vx*CONFIG.tick-side.x*0.15,y:PRACTICE.centerY,z:p.motion.z+p.motion.vz*CONFIG.tick-side.z*0.15};
       const wasEvading=p.motion.evade>0;
-      p.step(CONFIG.tick,true,firing,PLAYER,look(PLAYER,lead));
-      if(!wasEvading && p.motion.evade>0){dodges++;const now=across(p);if(p.motion.ex*now.x+p.motion.ez*now.z>0)away++;}
+      p.step(CONFIG.tick,true,firing,viewer,look(viewer,lead));
+      if(!wasEvading && p.motion.evade>0){dodges++;const now=across(p,viewer);if(p.motion.ex*now.x+p.motion.ez*now.z>0)away++;}
       if(p.hp<=0){p.hp=100;p.respawn=0;}
     }
     return {dodges,away};

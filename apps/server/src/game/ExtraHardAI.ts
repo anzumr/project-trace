@@ -1,4 +1,4 @@
-import { CONFIG, COVER, MODES, rayBox, eyeHeight, stance, type ModeId, type Vec3 } from '@trace/shared';
+import { CONFIG, ARENA, ARENA_SOLIDS, MODES, arenaRay, overlaps, eyeHeight, stance, type ModeId, type Vec3 } from '@trace/shared';
 import { neutralInput, type PlayerInput, type PlayerState } from '@trace/shared/protocol';
 
 const angle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -13,7 +13,7 @@ export function visiblePoint(self: PlayerState, target: PlayerState, mode: ModeI
     if (distance < 0.01 || distance > 60) continue;
     const direction = { x: dx / distance, y: dy / distance, z: dz / distance };
     const dot = -Math.sin(self.yaw) * Math.cos(self.pitch) * direction.x + Math.sin(self.pitch) * direction.y - Math.cos(self.yaw) * Math.cos(self.pitch) * direction.z;
-    const wall = rayBox(origin, direction, COVER);
+    const wall = arenaRay(origin, direction);
     if (dot >= Math.cos(85 * Math.PI / 360) && (wall === null || wall > distance)) return point;
   }
   return null;
@@ -59,20 +59,21 @@ export class ExtraHardAI {
       strafe = this.strafe;
     } else {
       // Fixed map patrol uses no opponent data when sight has been lost.
-      const waypoints = [[-6, -6], [6, -6], [6, 6], [-6, 6]];
+      const waypoints = [[-5,-10],[-7,-4],[-7,4],[-5,10],[5,10],[7,4],[7,-4],[5,-10]];
       const [x, z] = waypoints[this.patrol];
       if (Math.hypot(x - self.body.x, z - self.body.z) < 1.5) this.patrol = (this.patrol + 1) % waypoints.length;
       yaw += clamp(angle(Math.atan2(-(x - self.body.x), -(z - self.body.z)) - yaw), 3 * dt); pitch *= 0.95; forward = 0.85;
     }
-    // Steer away from arena walls and around the center obstacle using map geometry.
-    if (Math.abs(self.body.x) > 11 || Math.abs(self.body.z) > 11) {
-      const x = -self.body.x, z = -self.body.z, length = Math.hypot(x, z);
-      forward = (-x * Math.sin(yaw) - z * Math.cos(yaw)) / length;
-      strafe = (x * Math.cos(yaw) - z * Math.sin(yaw)) / length;
-    } else if (Math.abs(self.body.x) < 3.1 && self.body.z > -2.5 && self.body.z < 1.5) {
-      const x = self.body.x >= 0 ? 1 : -1;
-      forward = -x * Math.sin(yaw); strafe = x * Math.cos(yaw);
+    // Choose a clear travel direction from map geometry, without observing hidden opponents.
+    let dx=strafe*Math.cos(yaw)-forward*Math.sin(yaw),dz=-forward*Math.cos(yaw)-strafe*Math.sin(yaw);
+    if(Math.abs(self.body.x)<ARENA.coverWidth/2+0.9 && Math.abs(self.body.z)>ARENA.coverZ && Math.abs(self.body.z)<ARENA.coverZ+1.6){dx=dx<0?-1:1;dz=0;}
+    const desired=Math.atan2(dz,dx),radius=CONFIG.radius*MODES[mode].scale;
+    const clear=(x:number,z:number)=>Math.hypot(x,z)<ARENA.radius-radius-0.15 && !ARENA_SOLIDS.some(b=>b.max.y>self.body.y+0.3 && overlaps({x,z},radius+0.12,b));
+    for(const turn of [0,0.5,-0.5,1,-1,1.57,-1.57,2.3,-2.3,Math.PI]){
+      const x=Math.cos(desired+turn),z=Math.sin(desired+turn);
+      if([0.3,0.7,1.1].every(d=>clear(self.body.x+x*d,self.body.z+z*d))){dx=x;dz=z;break;}
     }
+    forward=-dx*Math.sin(yaw)-dz*Math.cos(yaw);strafe=dx*Math.cos(yaw)-dz*Math.sin(yaw);
     const jump = self.body.grounded && now >= this.nextJump && !!memory;
     if (jump) this.nextJump = now + 1100 + this.random() * 1500;
     return { ...neutralInput(seq), active: true, yaw: angle(yaw), pitch: clamp(pitch, Math.PI / 2), forward: clamp(forward, 1), strafe: clamp(strafe, 1), jump,

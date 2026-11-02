@@ -97,6 +97,32 @@ try{
   }
   const [a,b]=pages;
   await mkdir(resolve('test-results'),{recursive:true});
+  const overview=await a.evaluate(()=>{
+    const e=(window as any).__traceEngine,camera=e.camera.clone();camera.fov=48;camera.position.set(18,32,26);camera.lookAt(0,0,0);camera.updateProjectionMatrix();
+    const fog=e.scene.fog,detail=e.decoration.visible;e.scene.fog=null;e.decoration.visible=true;
+    e.renderer.setPixelRatio(1);e.renderer.setSize(1440,1000,false);e.renderer.render(e.scene,camera);
+    const image=e.renderer.domElement.toDataURL('image/png');e.scene.fog=fog;e.decoration.visible=detail;e.resize();return image.split(',')[1];
+  });
+  await writeFile(resolve('test-results/arena-overview.png'),Buffer.from(overview,'base64'));
+  await a.getByRole('button',{name:/^Practice/}).click();
+  await until(async()=>a.evaluate(()=>(window as any).__traceEngine.locked));
+  // Headless pointer lock can forward desktop mouse motion; fix look direction for the keyboard route.
+  await a.waitForTimeout(300);await a.evaluate(()=>{const e=(window as any).__traceEngine;document.removeEventListener('mousemove',e.mouse);e.yaw=0;e.pitch=0;e.settings.graphics='balanced';e.settings.renderScale=1;});
+  await a.screenshot({path:resolve('test-results/arena-spawn.png')});
+  const walk=async(key:string,axis:'x'|'z',value:number,increasing:boolean)=>{
+    await a.evaluate(()=>{const e=(window as any).__traceEngine;e.yaw=0;e.pitch=0;});
+    await a.keyboard.down(key);try{await until(async()=>a.evaluate(({axis,value,increasing})=>{const b=(window as any).__traceEngine.body;return increasing?b[axis]>=value:b[axis]<=value;},{axis,value,increasing}),8000);}catch(error){console.log('Navigation stopped',key,await a.evaluate(()=>{const e=(window as any).__traceEngine;return{body:e.body,yaw:e.yaw,locked:e.locked,keys:[...e.keys]};}));throw error;}finally{await a.keyboard.up(key);}
+    await a.waitForTimeout(250);
+  };
+  await walk('d','x',5,true);
+  await walk('w','z',0.6,false);
+  await walk('d','x',12.5,true);
+  const landing=await a.evaluate(()=>{const e=(window as any).__traceEngine;return{y:e.body.y,grounded:e.body.grounded};});assert.equal(landing.y,2);assert.equal(landing.grounded,true);
+  await a.screenshot({path:resolve('test-results/arena-platform.png')});
+  await walk('a','x',7.5,false);assert.equal(await a.evaluate(()=>(window as any).__traceEngine.body.y),0);
+  await a.evaluate(()=>document.exitPointerLock());await a.getByRole('button',{name:'Main menu',exact:true}).click();
+  await a.evaluate(()=>{const e=(window as any).__traceEngine;document.addEventListener('mousemove',e.mouse);e.settings.graphics='competitive';e.settings.renderScale=0.5;});
+  console.log('PASS: circular arena overview, protected spawn, real keyboard navigation up and down stairs.');
   for(const page of pages)await page.evaluate(()=>{const e=(window as any).__traceEngine;(window as any).__audioEvents=[];const play=e.audio.play.bind(e.audio);e.audio.play=(kind:string,now:number)=>{(window as any).__audioEvents.push({kind,now});return play(kind,now);};});
   const matchCount=async()=>{
     if(!live)return (await db.query('select * from public.match_results')).rows.length;
@@ -134,9 +160,9 @@ try{
   // No server HP/positions/outcomes are edited. B crosses into the clear lane; A tracks it.
   for(let i=0;i<2;i++)await pages[i].evaluate(index=>{
     const e=(window as any).__traceEngine;
-    e.input=()=>{const s=e.network.snapshot,me=s?.players.find((p:any)=>p.id===e.network.id),other=s?.players.find((p:any)=>p.id!==e.network.id);let yaw=index? -Math.PI:0,pitch=0,strafe=0;
-      if(me&&other){if(index===1)strafe=me.body.x<5.2?-1:0;else{const dx=other.body.x-me.body.x,dz=other.body.z-me.body.z;yaw=Math.atan2(-dx,-dz);pitch=Math.atan2(other.body.y+1.0-(me.body.y+1.6),Math.hypot(dx,dz));}}
-      return{seq:++e.seq,forward:0,strafe,jump:false,yaw,pitch,firing:index===0,active:true};};
+    e.input=()=>{const s=e.network.snapshot,me=s?.players.find((p:any)=>p.id===e.network.id),other=s?.players.find((p:any)=>p.id!==e.network.id);let yaw=index? -Math.PI:0,pitch=0,strafe=0,forward=0;
+      if(me&&other){if(index===1)strafe=me.body.x<5.2?-1:0;else{const dx=other.body.x-me.body.x,dz=other.body.z-me.body.z;yaw=Math.atan2(-dx,-dz);pitch=Math.atan2(other.body.y+1.0-(me.body.y+1.6),Math.hypot(dx,dz));const walk=me.body.x<5.2?1:0;strafe=walk*Math.cos(yaw);forward=-walk*Math.sin(yaw);}}
+      return{seq:++e.seq,forward,strafe,jump:false,yaw,pitch,firing:index===0,active:true};};
   },i);
   await a.getByRole('button',{name:'APPROVE MODE & READY',exact:true}).click();await a.evaluate(()=>document.exitPointerLock());
   await b.getByRole('button',{name:'APPROVE MODE & READY',exact:true}).click();await b.evaluate(()=>document.exitPointerLock());

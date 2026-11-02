@@ -1,5 +1,5 @@
 import { emptyCombat, measureCombat, type RoundCombat } from '@trace/shared/combat';
-import { CONFIG, COVER, spawn, move, rayBox, MODES, isMode, eyeHeight, stance, type ModeId, type Vec3 } from '@trace/shared';
+import { CONFIG, ARENA_SOLIDS, spawn, move, arenaRay, MODES, isMode, eyeHeight, stance, type ModeId, type Vec3 } from '@trace/shared';
 import { BOT_MODEL, HEADSHOT_MULTIPLIER, tracePracticeModel } from '@trace/shared/practice';
 import { neutralInput, validateInput, type PlayerInput, type PlayerState, type Snapshot } from '@trace/shared/protocol';
 import { randomUUID } from 'node:crypto';
@@ -79,8 +79,7 @@ export class Room {
   add(id: string, identity?: { userId: string; username: string }) {
     if (this.players.size >= 2 || this.phase !== 'lobby') return false;
     if (identity && [...this.players.values()].some(p => p.accountId === identity.userId)) return false;
-    const body = spawn(); const guest = this.players.size === 1;
-    body.x = guest ? -5 : 5; body.z = guest ? -9 : 9;
+    const guest = this.players.size === 1; const body = spawn(guest ? -1 : 1);
     const yaw = guest ? -Math.PI : 0;
     this.players.set(id, { opportunity: 0, received: 0, play: 0, state: { roundStats: emptyCombat(), matchStats: emptyCombat(), kills: 0, maxHp: CONFIG.hp, connected: true, id, name: guest ? 'Player 2' : 'Player 1', wins: 0, body, yaw, pitch: 0, hp: CONFIG.hp, ready: false, ack: 0, hit: false, headshot: false, damage: 0, trackingSeconds: 0, firingSeconds: 0 }, queue: [], input: neutralInput(), lastInput: 0, lastSeq: -1, packets: 0, rateStart: 0 });
     const player = this.players.get(id)!;
@@ -120,7 +119,7 @@ export class Room {
     this.roundSerial++; this.roundWinner = null; this.reason = '';
     this.clearInputs();
     [...this.players.values()].forEach((p, i) => {
-      p.state.body = { ...spawn(), x: i ? -5 : 5, z: i ? -9 : 9 };
+      p.state.body = spawn(i ? -1 : 1);
       Object.assign(p.state, { roundStats: emptyCombat(), hp: CONFIG.hp, yaw: i ? -Math.PI : 0, pitch: 0 });
     });
   }
@@ -187,7 +186,7 @@ export class Room {
       else p.input = { ...p.input, jump: false };
       if (now - p.lastInput > 250) { p.input = neutralInput(p.state.ack); p.queue = []; }
       const input = p.input;
-      move(p.state.body, input.active ? input : { forward: 0, strafe: 0, yaw: p.state.yaw, jump: false }, CONFIG.tick, [COVER], this.mode);
+      move(p.state.body, input.active ? input : { forward: 0, strafe: 0, yaw: p.state.yaw, jump: false }, CONFIG.tick, ARENA_SOLIDS, this.mode);
       if (input.active) { p.state.yaw = input.yaw; p.state.pitch = input.pitch; }
       p.state.hit = false; p.state.headshot = false;
       if (input.active && input.firing) p.state.firingSeconds += CONFIG.tick;
@@ -206,7 +205,7 @@ export class Room {
       const result = tracePracticeModel(origin, direction,
         { x: seen.x, y: seen.y + height / 2, z: seen.z },
         { width: BOT_MODEL.width * scale, height, circle: false, speed: MODES[this.mode].speed });
-      const cover = rayBox(origin, direction, COVER);
+      const cover = arenaRay(origin, direction);
       return result && (cover === null || result.distance < cover) ? result : null;
     });
     const damageThisTick = [0,0];

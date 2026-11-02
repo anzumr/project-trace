@@ -1,10 +1,11 @@
 import { CombatAudio } from './CombatAudio';
 import { emptyCombat, type CombatStats } from '@trace/shared/combat';
 import * as THREE from 'three';
-import { CONFIG, COVER, MODES, spawn, move, eyeHeight, stance } from '@trace/shared';
+import { CONFIG, ARENA_SOLIDS, MODES, spawn, move, eyeHeight, stance } from '@trace/shared';
 import { Practice, BOT_MODEL } from '@trace/shared/practice';
 import type { PlayerInput, Snapshot, QueueState } from '@trace/shared/protocol';
 import { createBotModel } from './BotModel';
+import { createArena } from './Arena';
 import { Network } from '../net/Network';
 import { TargetHealth } from './TargetHealth';
 import { FrameGate, FrameMetrics, type FrameStats } from './Performance';
@@ -78,21 +79,7 @@ export class Engine {
     this.scene.add(this.decoration);
     this.scene.add(new THREE.HemisphereLight(0xe8edf5, 0x262a31, 2.7));
     const sun = new THREE.DirectionalLight(0xffffff, 2); sun.position.set(5, 15, 7); this.scene.add(sun);
-    const block = (w: number, h: number, d: number, x: number, y: number, z: number, color: string) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.8 }));
-      mesh.position.set(x, y, z); this.scene.add(mesh); return mesh;
-    };
-    block(28, 0.3, 28, 0, -0.15, 0, '#16191e');
-    const grid = new THREE.GridHelper(28, 28, '#30353e', '#21252c'); grid.position.y = 0.003; this.decoration.add(grid);
-    for (const sign of [-1, 1]) {
-      block(29, 4, 0.5, 0, 2, sign * 14.25, '#22262d');
-      block(0.5, 4, 28, sign * 14.25, 2, 0, '#22262d');
-      block(28, 0.06, 0.07, 0, 0.08, sign * 13.95, '#e5212e');
-      block(0.07, 0.06, 28, sign * 13.95, 0.08, 0, '#e5212e');
-      for (const x of [-10, -5, 0, 5, 10]) this.decoration.add(block(0.14, 2.6, 0.08, x, 2, sign * 13.97, '#353b45'));
-    }
-    block(3.6, 2.6, 1, 0, 1.3, -0.5, '#30353e');
-    block(3.6, 0.05, 1, 0, 2.63, -0.5, '#e5212e');
+    createArena(this.scene,this.decoration);
     this.target = new THREE.Mesh(this.sphereGeometry,new THREE.MeshStandardMaterial({color:'#ff657e',roughness:0.8}));this.scene.add(this.target);
     this.scene.add(this.trainingModel);
     this.scene.add(this.healthBar.sprite);
@@ -120,7 +107,7 @@ export class Engine {
     }
     this.body = { ...me.body };
     this.pending = this.pending.filter(input => input.seq > me.ack);
-    if (!state.paused && (state.phase === 'live' || state.phase === 'suddenDeath')) for (const input of this.pending) move(this.body, input, CONFIG.tick, [COVER], this.network.snapshot?.mode ?? 'standard');
+    if (!state.paused && (state.phase === 'live' || state.phase === 'suddenDeath')) for (const input of this.pending) move(this.body, input, CONFIG.tick, ARENA_SOLIDS, this.network.snapshot?.mode ?? 'standard');
     else { this.pending = []; if (this.locked && state.phase === 'finished' && this.lastPhase !== 'finished') this.blur(); }
     this.lastPhase = state.phase;
     this.audio.observe({allowInitialSpawn:state.phase==='countdown',key:state.matchId ?? `${state.code}:${state.match}`,spawn:state.roundSerial,kills:me.kills??0,damage:me.damage,headDamage:me.matchStats?.headDamage??0});
@@ -178,7 +165,7 @@ export class Engine {
         if(this.network.snapshotAge>=200 || this.network.snapshot.paused || !this.firing)this.hit=false;
         if (!this.network.snapshot.paused && (this.network.snapshot.phase === 'live' || this.network.snapshot.phase === 'suddenDeath')) {
           const input = this.input(this.locked && this.network.snapshotAge < 1000); this.jump = false;
-          move(this.body, input, CONFIG.tick, [COVER], this.network.snapshot?.mode ?? 'standard');
+          move(this.body, input, CONFIG.tick, ARENA_SOLIDS, this.network.snapshot?.mode ?? 'standard');
           this.pending.push(input); if (this.pending.length > 120) this.pending.shift();
           this.network.send(input);
         }

@@ -1,5 +1,5 @@
 import { emptyCombat, measureCombat, accuracy, type CombatStats } from './combat';
-import { CONFIG, COVER, rayBox, type Vec3 } from './index';
+import { CONFIG, ARENA_SOLIDS, overlaps, arenaRay, type Vec3 } from './index';
 
 export const PRACTICE = { respawnSeconds: 0.65, speedStep: 1.15, maxSpeed: 3, widthStep: 0.9, heightStep: 0.82, minSize: 0.4, circleAfterShrinks: 8, baseSpeed: 4, bounds: 12, coverClearance: 0.9, playerClearance: 4, spawnDistance: 6, centerY: 0.9 } as const;
 export const BOT_MODEL = { width: 0.5, height: 1.8, bodyRadius: 0.25, bodyBottom: -0.65, bodyTop: 0.29, headRadius: 0.16, headY: 0.74 } as const;
@@ -17,8 +17,9 @@ export type PracticeMotion = { x: number; z: number; vx: number; vz: number; gx:
 /** Inside the arena with room for the target, and clear of the central cover. */
 export function practiceAllowed(x: number, z: number) {
   const c = PRACTICE.coverClearance, b = PRACTICE.bounds;
-  return Math.abs(x) <= b && Math.abs(z) <= b && !(x > COVER.min.x - c && x < COVER.max.x + c && z > COVER.min.z - c && z < COVER.max.z + c);
+  return Math.hypot(x,z)<=b && !ARENA_SOLIDS.some(s=>overlaps({x,z},c,s));
 }
+function clearRoute(x:number,z:number,gx:number,gz:number){const steps=Math.ceil(Math.hypot(gx-x,gz-z)/0.4);for(let i=1;i<=steps;i++)if(!practiceAllowed(x+(gx-x)*i/steps,z+(gz-z)*i/steps))return false;return true;}
 export function practiceProfile(wave: number) {
   const upgrades = Math.max(0, Math.floor(wave) - 1);
   const shrinks = Math.min(PRACTICE.circleAfterShrinks, Math.floor(upgrades / 2));
@@ -88,7 +89,8 @@ export class Practice {
   constructor({ seed = Math.floor(Math.random() * 2 ** 32), still = false }: { seed?: number; still?: boolean } = {}) {
     this.random = new PracticeRandom(seed); this.still = still;
     // Start in front of the player spawn, then roam the whole arena.
-    const x = (this.random.next() * 2 - 1) * 6, z = -6 - this.random.next() * 5;
+    let x = (this.random.next() * 2 - 1) * 6, z = -6 - this.random.next() * 5;
+    if(!practiceAllowed(x,z)){x=5;z=-6;}
     this.motion = { x, z, vx: 0, vz: 0, gx: x, gz: z, cruise: 0.8, retarget: 0, juke: 1.5, evade: 0, ex: 0, ez: 0, cooldown: 0, tracking: 0 };
   }
   get profile() { return practiceProfile(this.wave); }
@@ -101,7 +103,7 @@ export class Practice {
       let gx: number, gz: number;
       if (lateral) { const side = r() < 0.5 ? -1 : 1, distance = 3 + r() * 5; gx = m.x + px * side * distance + (r() - 0.5) * 2; gz = m.z + pz * side * distance + (r() - 0.5) * 2; }
       else { gx = (r() * 2 - 1) * PRACTICE.bounds; gz = (r() * 2 - 1) * PRACTICE.bounds; }
-      if (practiceAllowed(gx, gz) && Math.hypot(gx - origin.x, gz - origin.z) >= PRACTICE.playerClearance) { m.gx = gx; m.gz = gz; return; }
+      if (practiceAllowed(gx, gz) && clearRoute(m.x,m.z,gx,gz) && Math.hypot(gx - origin.x, gz - origin.z) >= PRACTICE.playerClearance) { m.gx = gx; m.gz = gz; return; }
     }
   }
   private respawnAway(origin: Vec3) {
@@ -146,17 +148,9 @@ export class Practice {
     if (near < PRACTICE.playerClearance) { const push = top * 2 * (PRACTICE.playerClearance - near) / PRACTICE.playerClearance; dx += ox / near * push; dz += oz / near * push; }
     const ax = dx - m.vx, az = dz - m.vz, change = Math.hypot(ax, az), limit = accel * dt;
     if (change > limit) { m.vx += ax / change * limit; m.vz += az / change * limit; } else { m.vx = dx; m.vz = dz; }
-    m.x += m.vx * dt; m.z += m.vz * dt;
-    const b = PRACTICE.bounds;
-    if (Math.abs(m.x) > b) { m.x = Math.sign(m.x) * b; m.vx *= -0.3; m.retarget = 0; m.evade = 0; }
-    if (Math.abs(m.z) > b) { m.z = Math.sign(m.z) * b; m.vz *= -0.3; m.retarget = 0; m.evade = 0; }
-    const c = PRACTICE.coverClearance, minX = COVER.min.x - c, maxX = COVER.max.x + c, minZ = COVER.min.z - c, maxZ = COVER.max.z + c;
-    if (m.x > minX && m.x < maxX && m.z > minZ && m.z < maxZ) {
-      // Leave the cover zone by its nearest face.
-      const exits = [m.x - minX, maxX - m.x, m.z - minZ, maxZ - m.z], nearest = exits.indexOf(Math.min(...exits));
-      if (nearest < 2) { m.x = nearest ? maxX : minX; m.vx = 0; } else { m.z = nearest === 3 ? maxZ : minZ; m.vz = 0; }
-      m.retarget = 0; m.evade = 0;
-    }
+    // Axis sliding keeps random roaming outside all cover and the circular boundary.
+    if(practiceAllowed(m.x+m.vx*dt,m.z))m.x+=m.vx*dt;else{m.vx=0;m.retarget=0;m.evade=0;}
+    if(practiceAllowed(m.x,m.z+m.vz*dt))m.z+=m.vz*dt;else{m.vz=0;m.retarget=0;m.evade=0;}
   }
   step(dt: number, active: boolean, firing: boolean, origin: Vec3, direction: Vec3) {
     this.hit = false;
@@ -174,7 +168,7 @@ export class Practice {
     if (!firing) { m.tracking -= m.tracking * Math.min(1, dt / 0.5); measureCombat(this.stats,dt,false,0,false); measureCombat(this.waveStats,dt,false,0,false); return; }
     const center = this.position;
     const result = tracePracticeModel(origin, direction, center, profile);
-    const cover = rayBox(origin, direction, COVER);
+    const cover = arenaRay(origin, direction);
     this.hit = result !== null && (cover === null || result.distance < cover);
     this.headshot = this.hit && result?.region === 'head';
     let damage = 0;

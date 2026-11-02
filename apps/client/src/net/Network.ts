@@ -5,6 +5,8 @@ import type { ClientEvents, ServerEvents, PlayerInput, RoomReply, Snapshot, Queu
 export class Network {
   readonly socket: Socket<ServerEvents, ClientEvents> = io({ autoConnect: false, reconnection: true, reconnectionDelay: 500, reconnectionDelayMax: 2000, transports: ['websocket', 'polling'] });
   private seat: string | undefined;
+  // A snapshot already in transit must not reopen a room after Leave.
+  private leftRoom: string | undefined;
   private cancelPending = false;
   queue: QueueState = { state: 'idle', elapsedMs: 0, botEligible: false, serverTime: 0 };
   private queueState = (state: QueueState) => { this.queue = state; this.onQueue(state); };
@@ -30,7 +32,7 @@ export class Network {
   private pingTimer: ReturnType<typeof setInterval>;
   constructor(private update: (state: Snapshot | null) => void, private error: (message: string) => void, private apply: (state: Snapshot) => void, private onQueue: (state: QueueState)=>void = ()=>{}) {
     this.socket.on('queue', this.queueState);
-    this.socket.on('seat', id => { this.seat = id; });
+    this.socket.on('seat', id => { this.leftRoom=undefined;this.seat = id; });
     this.socket.on('connect', () => { this.error(''); if(this.cancelPending){this.cancelPending=false;void this.cancelQueue();} });
     this.socket.on('snapshot', this.receive);
     this.socket.on('notice', error);
@@ -43,7 +45,7 @@ export class Network {
     this.pingTimer = setInterval(() => { if (!this.socket.connected) return; const start = performance.now(); this.socket.timeout(2000).emit('pingCheck', err => { if (!err) this.ping = performance.now() - start; }); }, 2000);
   }
   get id() { return this.seat ?? this.socket.id; }
-  private receive = (snapshot: Snapshot) => { this.received=performance.now();this.snapshot = snapshot; this.samples.push({ received: this.received, snapshot }); if (this.samples.length > 10) this.samples.shift(); this.apply(snapshot); this.update(snapshot); };
+  private receive = (snapshot: Snapshot) => { if(snapshot.code===this.leftRoom)return;this.received=performance.now();this.snapshot = snapshot; this.samples.push({ received: this.received, snapshot }); if (this.samples.length > 10) this.samples.shift(); this.apply(snapshot); this.update(snapshot); };
   private async connect() {
     if (this.socket.connected) return;
     await new Promise<void>((resolve, reject) => {
@@ -63,6 +65,7 @@ export class Network {
         if (code === undefined) this.socket.timeout(5000).emit('create', ack); else this.socket.timeout(5000).emit('join', code.trim().toUpperCase(), ack);
       });
       if (!reply.ok || !reply.snapshot) throw new Error(reply.error || 'Could not enter room.');
+      this.leftRoom=undefined;
       this.receive(reply.snapshot);
       if (name) this.socket.emit('setName', name);
       return reply.snapshot;
@@ -85,7 +88,7 @@ export class Network {
   send(input: PlayerInput) { if (this.socket.connected && this.snapshot) this.socket.emit('input', input); }
   ready() { if (this.snapshot) this.socket.emit('ready', this.snapshot.modeRevision); }
   selectMode(mode: ModeId) { this.socket.emit('selectMode', mode); }
-  leave() { this.socket.emit('leave'); this.rememberPublic(false); this.clear(); }
+  leave() { this.leftRoom=this.snapshot?.code;this.socket.emit('leave'); this.rememberPublic(false); this.clear(); }
   private clear() { this.viewTick = undefined; this.snapshot = null; this.seat = undefined; this.samples = []; this.update(null); }
   remote(now: number) {
     const id = this.id, latest = this.snapshot?.players.find(p => p.id !== id); if (!latest) return null;
