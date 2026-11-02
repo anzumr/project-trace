@@ -1,14 +1,14 @@
-import { CONFIG, COVER, MODES, rayBox, type ModeId, type Vec3 } from '@trace/shared';
+import { CONFIG, COVER, MODES, rayBox, eyeHeight, stance, type ModeId, type Vec3 } from '@trace/shared';
 import { neutralInput, type PlayerInput, type PlayerState } from '@trace/shared/protocol';
 
 const angle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v: number, n: number) => Math.max(-n, Math.min(n, v));
 export function visiblePoint(self: PlayerState, target: PlayerState, mode: ModeId): Vec3 | null {
   const scale = MODES[mode].scale;
-  const origin = { x: self.body.x, y: self.body.y + CONFIG.eyeHeight * scale, z: self.body.z };
+  const origin = { x: self.body.x, y: self.body.y + eyeHeight(self.body, mode), z: self.body.z };
   // Sight is a forward cone. Cover must block observations, not merely damage.
   for (const height of [1.55, 0.9]) {
-    const point = { x: target.body.x, y: target.body.y + height * scale, z: target.body.z };
+    const point = { x: target.body.x, y: target.body.y + height * scale * stance(target.body), z: target.body.z };
     const dx = point.x - origin.x, dy = point.y - origin.y, dz = point.z - origin.z, distance = Math.hypot(dx, dy, dz);
     if (distance < 0.01 || distance > 60) continue;
     const direction = { x: dx / distance, y: dy / distance, z: dz / distance };
@@ -49,7 +49,7 @@ export class ExtraHardAI {
       const prediction = Math.min(0.2, (now - memory.at) / 1000);
       const dx = memory.point.x + memory.velocity.x * prediction - self.body.x;
       const dz = memory.point.z + memory.velocity.z * prediction - self.body.z;
-      const dy = memory.point.y + memory.velocity.y * prediction - (self.body.y + CONFIG.eyeHeight * MODES[mode].scale);
+      const dy = memory.point.y + memory.velocity.y * prediction - (self.body.y + eyeHeight(self.body, mode));
       const distance = Math.hypot(dx, dz);
       // Small time-varying motor error and 240°/s maximum turn prevent perfect snaps.
       const error = Math.sin(now * 0.0031) * 0.009 + Math.sin(now * 0.0077) * 0.004;

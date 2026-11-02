@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Room } from './game/Room';
 import { neutralInput } from '@trace/shared/protocol';
 import { CONFIG, MODES, type ModeId } from '@trace/shared';
+import { BOT_MODEL } from '@trace/shared/practice';
 
 function advance(room: Room, seconds: number) { for (let i=0;i<Math.round(seconds/CONFIG.tick);i++) room.step(room.tick * CONFIG.tick * 1000); }
 function live() { const room = new Room('ABCDE'); room.add('a'); room.add('b'); room.ready('a'); room.ready('b'); advance(room,CONFIG.countdownSeconds); return room; }
@@ -142,4 +143,26 @@ test('shots rewind a strafing target to the tick the shooter saw, within the rew
   room.accept('a', { ...neutralInput(3), active: true, firing: true, view: seen[0].tick, ...aim(seen[0]) }, now); room.step(now += 17);
   assert.equal(b.state.hp, hp, 'rewind beyond the limit is clamped');
   assert.equal(room.accept('a', { ...neutralInput(4), active: true, view: NaN }, now), false);
+});
+test('crouching shrinks the server hitbox and lowers the shooter eye line', () => {
+  const room = live(), a = room.players.get('a')!, b = room.players.get('b')!;
+  a.state.body.x = b.state.body.x = 5;
+  let now = 1000, seq = 0;
+  for (let i = 0; i < 30; i++) { room.accept('b', { ...neutralInput(++seq), active: true, crouch: true }, now); room.step(now += 17); }
+  assert.equal(b.state.body.crouch, 1);
+  const aim = (y: number) => { const dx = b.state.body.x - a.state.body.x, dy = y - (a.state.body.y + CONFIG.eyeHeight), dz = b.state.body.z - a.state.body.z; return { yaw: Math.atan2(-dx, -dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) }; };
+  const standingHead = b.state.body.y + BOT_MODEL.height / 2 + BOT_MODEL.headY;
+  room.accept('b', { ...neutralInput(++seq), active: true, crouch: true }, now);
+  room.accept('a', { ...neutralInput(1), active: true, firing: true, ...aim(standingHead) }, now); room.step(now += 17);
+  assert.equal(b.state.hp, 100, 'a shot at standing head height passes over a crouched target');
+  const crouchedHead = b.state.body.y + (BOT_MODEL.height / 2 + BOT_MODEL.headY) * CONFIG.crouchHeight;
+  room.accept('b', { ...neutralInput(++seq), active: true, crouch: true }, now);
+  room.accept('a', { ...neutralInput(2), active: true, firing: true, ...aim(crouchedHead) }, now); room.step(now += 17);
+  assert.ok(b.state.hp < 100); assert.equal(a.state.headshot, true, 'the lowered head is still a headshot');
+  for (let i = 0; i < 30; i++) { room.accept('b', { ...neutralInput(++seq), active: true, crouch: true }, now); room.accept('a', { ...neutralInput(3 + i), active: true, crouch: true }, now); room.step(now += 17); }
+  assert.equal(a.state.body.crouch, 1); assert.equal(b.state.body.crouch, 1);
+  const hp = b.state.hp;
+  room.accept('b', { ...neutralInput(++seq), active: true, crouch: true }, now);
+  room.accept('a', { ...neutralInput(40), active: true, crouch: true, firing: true, yaw: 0, pitch: 0 }, now); room.step(now += 17);
+  assert.ok(b.state.hp < hp, 'a crouched shooter fires from the lowered eye line');
 });

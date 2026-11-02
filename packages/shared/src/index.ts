@@ -1,26 +1,34 @@
 import { MODES, type ModeId } from './modes';
 export { MODES, isMode, type ModeId } from './modes';
-export const CONFIG = { tick: 1 / 60, hp: 100, dps: 20, roundSeconds: 90, countdownSeconds: 3, roundSummarySeconds: 3, winsRequired: 2, suddenDeathSeconds: 15, arenaHalf: 14, speed: 7, acceleration: 38, airAcceleration: 12, gravity: 23, jumpSpeed: 8, radius: 0.35, height: 1.8, eyeHeight: 1.6, targetWidth: 0.9, targetHeight: 1.8 } as const;
+export const CONFIG = { tick: 1 / 60, hp: 100, dps: 20, roundSeconds: 90, countdownSeconds: 3, roundSummarySeconds: 3, winsRequired: 2, suddenDeathSeconds: 15, arenaHalf: 14, speed: 7, acceleration: 38, airAcceleration: 12, gravity: 23, jumpSpeed: 8, radius: 0.35, height: 1.8, eyeHeight: 1.6, targetWidth: 0.9, targetHeight: 1.8, crouchHeight: 0.6, crouchSpeed: 0.5, crouchRate: 8 } as const;
 export type Vec3 = { x: number; y: number; z: number };
 export type Box = { min: Vec3; max: Vec3 };
 export const COVER: Box = { min: { x: -1.8, y: 0, z: -1 }, max: { x: 1.8, y: 2.6, z: 0 } };
-export type Body = Vec3 & { vx: number; vy: number; vz: number; grounded: boolean };
-export type Input = { forward: number; strafe: number; jump: boolean; yaw: number };
-export const spawn = (): Body => ({ x: 0, y: 0, z: 10, vx: 0, vy: 0, vz: 0, grounded: true });
+/** `crouch` eases from 0 (standing) to 1 (fully crouched). */
+export type Body = Vec3 & { vx: number; vy: number; vz: number; grounded: boolean; crouch?: number };
+export type Input = { forward: number; strafe: number; jump: boolean; yaw: number; crouch?: boolean };
+export const spawn = (): Body => ({ x: 0, y: 0, z: 10, vx: 0, vy: 0, vz: 0, grounded: true, crouch: 0 });
+/** Share of full height for the current crouch: 1 standing, CONFIG.crouchHeight fully crouched. */
+export const stance = (body: Pick<Body, 'crouch'>) => 1 - (1 - CONFIG.crouchHeight) * (body.crouch ?? 0);
+export const eyeHeight = (body: Pick<Body, 'crouch'>, mode: ModeId = 'standard') => CONFIG.eyeHeight * MODES[mode].scale * stance(body);
 const approach = (a: number, b: number, step: number) => a + Math.max(-step, Math.min(step, b - a));
 export function move(body: Body, input: Input, dt: number, solids: Box[] = [COVER], mode: ModeId = 'standard') {
-  const profile = MODES[mode], radius = CONFIG.radius * profile.scale, height = CONFIG.height * profile.scale;
+  const profile = MODES[mode], radius = CONFIG.radius * profile.scale, full = CONFIG.height * profile.scale;
+  const collides = (h: number) => solids.some(b => body.x + radius > b.min.x && body.x - radius < b.max.x && body.z + radius > b.min.z && body.z - radius < b.max.z && body.y < b.max.y && body.y + h > b.min.y);
+  // Crouch eases in and out; standing back up waits for headroom.
+  const crouch = approach(body.crouch ?? 0, input.crouch ? 1 : 0, CONFIG.crouchRate * dt);
+  if (crouch >= (body.crouch ?? 0) || !collides(full * stance({ crouch }))) body.crouch = crouch;
+  const height = full * stance(body), pace = CONFIG.speed * profile.speed * (1 - (1 - CONFIG.crouchSpeed) * (body.crouch ?? 0));
   const length = Math.max(1, Math.hypot(input.forward, input.strafe));
   const f = input.forward / length, s = input.strafe / length;
   const accel = (body.grounded ? CONFIG.acceleration : CONFIG.airAcceleration) * dt;
-  body.vx = approach(body.vx, (s * Math.cos(input.yaw) - f * Math.sin(input.yaw)) * CONFIG.speed * profile.speed, accel);
-  body.vz = approach(body.vz, (-f * Math.cos(input.yaw) - s * Math.sin(input.yaw)) * CONFIG.speed * profile.speed, accel);
+  body.vx = approach(body.vx, (s * Math.cos(input.yaw) - f * Math.sin(input.yaw)) * pace, accel);
+  body.vz = approach(body.vz, (-f * Math.cos(input.yaw) - s * Math.sin(input.yaw)) * pace, accel);
   if (input.jump && body.grounded) { body.vy = CONFIG.jumpSpeed * profile.jump; body.grounded = false; }
-  const collides = () => solids.some(b => body.x + radius > b.min.x && body.x - radius < b.max.x && body.z + radius > b.min.z && body.z - radius < b.max.z && body.y < b.max.y && body.y + height > b.min.y);
   for (const axis of ['x', 'z'] as const) {
     const old = body[axis];
     body[axis] = Math.max(-CONFIG.arenaHalf + radius, Math.min(CONFIG.arenaHalf - radius, old + body[axis === 'x' ? 'vx' : 'vz'] * dt));
-    if (collides()) { body[axis] = old; body[axis === 'x' ? 'vx' : 'vz'] = 0; }
+    if (collides(height)) { body[axis] = old; body[axis === 'x' ? 'vx' : 'vz'] = 0; }
   }
   const oldY = body.y;
   body.vy -= CONFIG.gravity * dt;

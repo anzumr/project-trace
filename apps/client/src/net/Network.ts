@@ -97,7 +97,7 @@ export class Network {
     if (!from || !to) { this.viewTick = this.snapshot?.tick; return latest; }
     const t = Math.max(0, Math.min(1, (time - a.received) / Math.max(1, b.received - a.received)));
     this.viewTick = a.snapshot.tick + (b.snapshot.tick - a.snapshot.tick) * t;
-    return { ...latest, body: { ...latest.body, x: from.body.x + (to.body.x - from.body.x) * t, y: from.body.y + (to.body.y - from.body.y) * t, z: from.body.z + (to.body.z - from.body.z) * t } };
+    return { ...latest, body: { ...latest.body, x: from.body.x + (to.body.x - from.body.x) * t, y: from.body.y + (to.body.y - from.body.y) * t, z: from.body.z + (to.body.z - from.body.z) * t, crouch: (from.body.crouch ?? 0) + ((to.body.crouch ?? 0) - (from.body.crouch ?? 0)) * t } };
   }
   dispose() { clearInterval(this.pingTimer); this.socket.removeAllListeners(); this.socket.disconnect(); }
 }

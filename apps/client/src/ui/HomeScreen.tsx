@@ -2,7 +2,7 @@ import type { useAccount } from '../auth/useAccount';
 import { accuracyOf, ago, kindLabel, type Progress } from '../auth/useProgress';
 import { Arrow, Chevron, Mouse } from './icons';
 
-export const Controls = () => <div className="controls-row"><span><kbd>W A S D</kbd>Move</span><span><kbd>SPACE</kbd>Jump</span><span><kbd>HOLD MOUSE 1</kbd>Fire</span><span><kbd>ESC</kbd>Menu</span></div>;
+export const Controls = () => <div className="controls-row"><span><kbd>W A S D</kbd>Move</span><span><kbd>SPACE</kbd>Jump</span><span><kbd>CTRL</kbd>Crouch</span><span><kbd>HOLD MOUSE 1</kbd>Fire</span><span><kbd>ESC</kbd>Menu</span></div>;
 
 function ProgressCard({ account, progress: p, openAccount }: { account: ReturnType<typeof useAccount>; progress: Progress; openAccount: () => void }) {
   if (!account.profile) return <section className="card" aria-label="Your account"><h2 className="card-title">{account.session ? 'FINISH YOUR ACCOUNT' : 'PLAYING AS GUEST'}</h2>

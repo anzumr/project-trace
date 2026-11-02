@@ -156,7 +156,7 @@ try{
   await a.getByRole('button',{name:'BACK',exact:true}).click();
   await a.getByRole('button',{name:/^Practice/}).click();
   await a.evaluate(`(()=>{
-    const e=window.__traceEngine;e.body.x=5;e.body.z=9;
+    const e=window.__traceEngine;e.practice=new e.practice.constructor({seed:5});e.body.x=5;e.body.z=9;
     window.__practiceAim=true;
     const aim=()=>{if(!window.__practiceAim)return;const p=e.practice.position;const dx=p.x-e.body.x,dz=p.z-e.body.z;e.yaw=Math.atan2(-dx,-dz);e.pitch=Math.atan2(p.y+.74*e.practice.profile.height/1.8-(e.body.y+1.6),Math.hypot(dx,dz));requestAnimationFrame(aim);};aim();
   })()`);

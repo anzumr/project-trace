@@ -1,18 +1,19 @@
 import { emptyCombat, measureCombat, type RoundCombat } from '@trace/shared/combat';
-import { CONFIG, COVER, spawn, move, rayBox, MODES, isMode, type ModeId, type Vec3 } from '@trace/shared';
+import { CONFIG, COVER, spawn, move, rayBox, MODES, isMode, eyeHeight, stance, type ModeId, type Vec3 } from '@trace/shared';
 import { BOT_MODEL, HEADSHOT_MULTIPLIER, tracePracticeModel } from '@trace/shared/practice';
 import { neutralInput, validateInput, type PlayerInput, type PlayerState, type Snapshot } from '@trace/shared/protocol';
 import { randomUUID } from 'node:crypto';
 import { ExtraHardAI, visiblePoint } from './ExtraHardAI';
 import type { MatchKind, MatchResult } from './Results';
 
+type Seen = Vec3 & { crouch: number };
 /** Shots may rewind the target up to this far to match what the shooter saw (interpolation delay plus latency). */
 export const MAX_REWIND_TICKS = Math.round(0.3 / CONFIG.tick);
 type Participant = { opportunity: number; received: number; play: number; accountId?: string; state: PlayerState; queue: PlayerInput[]; input: PlayerInput; lastInput: number; lastSeq: number; packets: number; rateStart: number };
 export class Room {
   lastRound: RoundCombat | undefined;
   private rounds: RoundCombat[] = [];
-  private history: { tick: number; bodies: Map<string, Vec3> }[] = [];
+  private history: { tick: number; bodies: Map<string, Seen> }[] = [];
   readonly kind: MatchKind;
   matchId = randomUUID();
   resultState: Snapshot['resultState'] = 'unavailable';
@@ -124,14 +125,14 @@ export class Room {
     });
   }
   /** Target position at the client's rendered tick, interpolated and clamped to this round's recent history. */
-  private rewind(id: string, view: number | undefined): Vec3 {
+  private rewind(id: string, view: number | undefined): Seen {
     const latest = this.history[this.history.length - 1].bodies.get(id)!;
     if (view === undefined) return latest;
     const at = Math.max(this.history[0].tick, Math.min(this.tick, view));
     const after = this.history.findIndex(h => h.tick >= at);
     const b = this.history[after], a = this.history[Math.max(0, after - 1)];
     const from = a.bodies.get(id)!, to = b.bodies.get(id)!, t = b.tick === a.tick ? 1 : (at - a.tick) / (b.tick - a.tick);
-    return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, z: from.z + (to.z - from.z) * t };
+    return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, z: from.z + (to.z - from.z) * t, crouch: from.crouch + (to.crouch - from.crouch) * t };
   }
   private captureRound(winner:string|null,reason:string) {
     this.lastRound = { serial:this.roundSerial, round:this.round, winner, reason, duration:[...this.players.values()][0].state.roundStats!.duration,
@@ -156,9 +157,9 @@ export class Room {
     if (++p.packets > 100) return false;
     p.lastSeq = raw.seq; p.lastInput = now;
     // Select fields explicitly: client position, HP and hit assertions never enter state.
-    const input: PlayerInput = { seq: raw.seq, forward: raw.forward, strafe: raw.strafe, yaw: raw.yaw, pitch: raw.pitch, jump: raw.jump, firing: raw.firing, active: raw.active, view: raw.view };
+    const input: PlayerInput = { seq: raw.seq, forward: raw.forward, strafe: raw.strafe, yaw: raw.yaw, pitch: raw.pitch, jump: raw.jump, crouch: raw.crouch === true, firing: raw.firing, active: raw.active, view: raw.view };
     if (!input.firing) { p.input.firing = false; p.queue.forEach(queued => { queued.firing = false; }); }
-    if (!input.active) { p.queue = []; p.input = { ...input, forward: 0, strafe: 0, firing: false, jump: false }; p.state.ack = input.seq; p.state.hit = false; p.state.headshot = false; return true; }
+    if (!input.active) { p.queue = []; p.input = { ...input, forward: 0, strafe: 0, firing: false, jump: false, crouch: false }; p.state.ack = input.seq; p.state.hit = false; p.state.headshot = false; return true; }
     if (this.phase !== 'live' && this.phase !== 'suddenDeath') return false;
     if (p.queue.length >= 12) p.queue.shift();
     p.queue.push(input);
@@ -191,7 +192,7 @@ export class Room {
       p.state.hit = false; p.state.headshot = false;
       if (input.active && input.firing) p.state.firingSeconds += CONFIG.tick;
     }
-    this.history.push({ tick: this.tick, bodies: new Map(players.map(p => [p.state.id, { x: p.state.body.x, y: p.state.body.y, z: p.state.body.z }])) });
+    this.history.push({ tick: this.tick, bodies: new Map(players.map(p => [p.state.id, { x: p.state.body.x, y: p.state.body.y, z: p.state.body.z, crouch: p.state.body.crouch ?? 0 }])) });
     if (this.history.length > MAX_REWIND_TICKS + 1) this.history.shift();
     // Evaluate both rays against the same tick before applying simultaneous damage.
     const hits = players.map((p, index) => {
@@ -200,11 +201,11 @@ export class Room {
       if (!p.input.active || !p.input.firing || p.state.hp <= 0 || target.hp <= 0) return null;
       const seen = this.rewind(target.id, p.input.view);
       const scale = MODES[this.mode].scale;
-      const origin = { x: body.x, y: body.y + CONFIG.eyeHeight * scale, z: body.z };
+      const origin = { x: body.x, y: body.y + eyeHeight(body, this.mode), z: body.z }, height = BOT_MODEL.height * scale * stance(seen);
       const direction = { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
       const result = tracePracticeModel(origin, direction,
-        { x: seen.x, y: seen.y + BOT_MODEL.height * scale / 2, z: seen.z },
-        { width: BOT_MODEL.width * scale, height: BOT_MODEL.height * scale, circle: false, speed: MODES[this.mode].speed });
+        { x: seen.x, y: seen.y + height / 2, z: seen.z },
+        { width: BOT_MODEL.width * scale, height, circle: false, speed: MODES[this.mode].speed });
       const cover = rayBox(origin, direction, COVER);
       return result && (cover === null || result.distance < cover) ? result : null;
     });

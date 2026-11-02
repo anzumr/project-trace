@@ -34,5 +34,6 @@ export function validateInput(value: unknown): value is PlayerInput {
     && typeof v.yaw === 'number' && Number.isFinite(v.yaw) && Math.abs(v.yaw) <= Math.PI * 2
     && typeof v.pitch === 'number' && Number.isFinite(v.pitch) && Math.abs(v.pitch) <= Math.PI / 2
     && ['jump', 'firing', 'active'].every(k => typeof v[k] === 'boolean')
-    && (v.view === undefined || (typeof v.view === 'number' && Number.isFinite(v.view) && v.view >= 0));
+    && (v.view === undefined || (typeof v.view === 'number' && Number.isFinite(v.view) && v.view >= 0))
+    && (v.crouch === undefined || typeof v.crouch === 'boolean');
 }

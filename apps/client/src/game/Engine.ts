@@ -1,7 +1,7 @@
 import { CombatAudio } from './CombatAudio';
 import { emptyCombat, type CombatStats } from '@trace/shared/combat';
 import * as THREE from 'three';
-import { CONFIG, COVER, MODES, spawn, move } from '@trace/shared';
+import { CONFIG, COVER, MODES, spawn, move, eyeHeight, stance } from '@trace/shared';
 import { Practice, BOT_MODEL } from '@trace/shared/practice';
 import type { PlayerInput, Snapshot, QueueState } from '@trace/shared/protocol';
 import { createBotModel } from './BotModel';
@@ -103,6 +103,7 @@ export class Engine {
     document.addEventListener('mousedown', this.mouseDown); document.addEventListener('mouseup', this.mouseUp);
     this.renderer.domElement.addEventListener('webglcontextlost', this.contextLost);
     window.addEventListener('blur', this.blur); document.addEventListener('visibilitychange', this.visibility);
+    window.addEventListener('beforeunload', this.beforeUnload);
     this.frame = requestAnimationFrame(this.loop);
   }
   get locked() { return document.pointerLockElement === this.renderer.domElement; }
@@ -139,8 +140,11 @@ export class Engine {
   }
   reset() { if (this.network.snapshot) return; this.practice = new Practice(); this.practiceSession++; this.hp = CONFIG.hp; this.ownHp = CONFIG.hp; this.tracked = 0; this.totalDamage = 0; this.body = spawn(); this.yaw = 0; this.pitch = 0; this.hit = false; this.firing = false; this.keys.clear(); this.jump = false; }
   private resize = () => { const w = this.host.clientWidth, h = this.host.clientHeight; this.renderer.setSize(w, h); this.camera.aspect = w / Math.max(1, h); this.camera.updateProjectionMatrix(); };
-  private keydown = (e: KeyboardEvent) => { if (!this.locked) return; if (['KeyW','KeyA','KeyS','KeyD','Space'].includes(e.code)) e.preventDefault(); this.keys.add(e.code); if (e.code === 'Space' && !e.repeat) this.jump = true; };
+  private keydown = (e: KeyboardEvent) => { if (!this.locked) return; if (['KeyW','KeyA','KeyS','KeyD','Space','KeyC','ControlLeft','ControlRight'].includes(e.code)) e.preventDefault(); this.keys.add(e.code); if (e.code === 'Space' && !e.repeat) this.jump = true; };
   private keyup = (e: KeyboardEvent) => { this.keys.delete(e.code); };
+  private get crouching() { return this.keys.has('ControlLeft') || this.keys.has('ControlRight') || this.keys.has('KeyC'); }
+  /** Ctrl crouches, and outside fullscreen Ctrl+W would close the tab: ask before leaving mid-game. */
+  private beforeUnload = (e: BeforeUnloadEvent) => { const phase = this.network.snapshot?.phase; if (this.locked || (phase && !['lobby', 'finished'].includes(phase))) { e.preventDefault(); e.returnValue = ''; } };
   private mouse = (e: MouseEvent) => { if (!this.locked) return; this.yaw -= e.movementX * this.settings.sensitivity; this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * this.settings.sensitivity * (this.settings.invert ? -1 : 1), -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01); };
   private mouseDown = (e: MouseEvent) => { if (e.button === 0 && this.locked) this.firing = true; };
   private mouseUp = (e: MouseEvent) => { if (e.button === 0) { this.firing = false; this.hit = false; this.feedback(); } };
@@ -150,7 +154,7 @@ export class Engine {
   private contextLost = (event: Event) => { event.preventDefault();this.blur();this.onError('Graphics context lost. Reload the page to restore the arena.'); };
   private direction = new THREE.Vector3();
   private input(active: boolean): PlayerInput {
-    return { seq: ++this.seq, forward: active ? Number(this.keys.has('KeyW')) - Number(this.keys.has('KeyS')) : 0, strafe: active ? Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA')) : 0, jump: active && this.jump, yaw: Math.atan2(Math.sin(this.yaw), Math.cos(this.yaw)), pitch: this.pitch, firing: active && this.firing, active, view: this.network.viewTick };
+    return { seq: ++this.seq, forward: active ? Number(this.keys.has('KeyW')) - Number(this.keys.has('KeyS')) : 0, strafe: active ? Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA')) : 0, jump: active && this.jump, crouch: active && this.crouching, yaw: Math.atan2(Math.sin(this.yaw), Math.cos(this.yaw)), pitch: this.pitch, firing: active && this.firing, active, view: this.network.viewTick };
   }
   private loop = (now: number) => {
     if (this.disposed) return;
@@ -174,22 +178,22 @@ export class Engine {
         continue;
       }
       if (this.locked) {
-        move(this.body, { forward: Number(this.keys.has('KeyW')) - Number(this.keys.has('KeyS')), strafe: Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA')), jump: this.jump, yaw: this.yaw }, CONFIG.tick); this.jump = false;
+        move(this.body, { forward: Number(this.keys.has('KeyW')) - Number(this.keys.has('KeyS')), strafe: Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA')), jump: this.jump, crouch: this.crouching, yaw: this.yaw }, CONFIG.tick); this.jump = false;
       }
-      this.camera.position.set(this.body.x, this.body.y + CONFIG.eyeHeight, this.body.z);
+      this.camera.position.set(this.body.x, this.body.y + eyeHeight(this.body), this.body.z);
       this.camera.rotation.set(this.pitch, this.yaw, 0); this.camera.getWorldDirection(this.direction);
       this.practice.step(CONFIG.tick, this.locked, this.firing, this.camera.position, this.direction);
       if(this.locked)this.audio.observe({key:`practice:${this.practiceSession}`,spawn:this.practice.spawnSerial,kills:this.practice.kills,damage:this.practice.damage,headDamage:this.practice.stats.headDamage});
       this.hp = this.practice.hp; this.hit = this.practice.hit; this.totalDamage = this.practice.damage; this.tracked = this.practice.tracked;
     }
-    this.camera.position.set(this.body.x, this.body.y + CONFIG.eyeHeight * MODES[this.network.snapshot?.mode ?? 'standard'].scale, this.body.z); this.camera.rotation.set(this.pitch, this.yaw, 0);
+    this.camera.position.set(this.body.x, this.body.y + eyeHeight(this.body, this.network.snapshot?.mode ?? 'standard'), this.body.z); this.camera.rotation.set(this.pitch, this.yaw, 0);
     const remote = this.network.remote(now);
     const profile = this.practice.profile;
     const online = !!this.network.snapshot;
     const mode = MODES[this.network.snapshot?.mode ?? 'standard'];
-    const circle = !online && profile.circle;
+    const circle = !online && profile.circle, crouched = stance(remote?.body ?? {});
     this.target.scale.setScalar(profile.width);
-    if (remote) this.target.position.set(remote.body.x, remote.body.y + CONFIG.targetHeight * mode.scale / 2, remote.body.z);
+    if (remote) this.target.position.set(remote.body.x, remote.body.y + CONFIG.targetHeight * mode.scale * crouched / 2, remote.body.z);
     else if (!online) { const p = this.practice.position; this.target.position.set(p.x, p.y, p.z); }
     (this.target.material as THREE.MeshStandardMaterial).color.set('#ff657e');
     (this.target.material as THREE.MeshStandardMaterial).emissive.set(this.hit ? '#8c243d' : '#000000');
@@ -197,11 +201,11 @@ export class Engine {
     this.target.visible = visible && circle;
     this.trainingModel.visible = visible && !circle;
     this.trainingModel.position.copy(this.target.position);
-    if (online) this.trainingModel.scale.setScalar(mode.scale);
+    if (online) this.trainingModel.scale.set(mode.scale, mode.scale * crouched, mode.scale);
     else this.trainingModel.scale.set(profile.width / BOT_MODEL.width, profile.height / BOT_MODEL.height, profile.width / BOT_MODEL.width);
     this.trainingMaterial.emissive.set(this.hit ? '#690012' : '#000000');
     this.healthBar.sprite.visible = visible;
-    this.healthBar.sprite.position.set(this.target.position.x, this.target.position.y + (online ? CONFIG.targetHeight * mode.scale : profile.height) / 2 + 0.5, this.target.position.z);
+    this.healthBar.sprite.position.set(this.target.position.x, this.target.position.y + (online ? CONFIG.targetHeight * mode.scale * crouched : profile.height) / 2 + 0.5, this.target.position.z);
     this.healthBar.update(this.hp);
     this.feedback();
     this.audio.update();
@@ -215,7 +219,7 @@ export class Engine {
   };
   dispose() {
     this.audio.dispose(); this.disposed = true; cancelAnimationFrame(this.frame); if (this.locked) document.exitPointerLock(); this.resizeObserver.disconnect();
-    document.removeEventListener('keydown', this.keydown); document.removeEventListener('keyup', this.keyup); document.removeEventListener('mousemove', this.mouse); document.removeEventListener('pointerlockchange', this.lockChange); window.removeEventListener('blur', this.blur); document.removeEventListener('visibilitychange', this.visibility);
+    document.removeEventListener('keydown', this.keydown); document.removeEventListener('keyup', this.keyup); document.removeEventListener('mousemove', this.mouse); document.removeEventListener('pointerlockchange', this.lockChange); window.removeEventListener('blur', this.blur); document.removeEventListener('visibilitychange', this.visibility); window.removeEventListener('beforeunload', this.beforeUnload);
     document.removeEventListener('mousedown', this.mouseDown); document.removeEventListener('mouseup', this.mouseUp);
     this.network.dispose(); this.healthBar.dispose();
     this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLost);

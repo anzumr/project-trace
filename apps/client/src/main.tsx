@@ -43,7 +43,14 @@ function App() {
   const [fullscreen, setFullscreen] = useState(!!document.fullscreenElement);
   useEffect(() => { const changed = () => setFullscreen(!!document.fullscreenElement); document.addEventListener('fullscreenchange', changed); return () => document.removeEventListener('fullscreenchange', changed); }, []);
   const toggleFullscreen = async () => {
-    try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else {
+        await document.documentElement.requestFullscreen();
+        // In fullscreen, Chromium browsers let the game keep Ctrl+W (crouch + forward) instead of closing the tab.
+        await (navigator as Navigator & { keyboard?: { lock?: (codes?: string[]) => Promise<void> } }).keyboard?.lock?.(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'Space', 'ControlLeft', 'ControlRight']).catch(() => {});
+      }
+    }
     catch { setError('Fullscreen was unavailable. Try your browser’s fullscreen shortcut (F11).'); }
   };
   useEffect(() => { try { engine.current = new Engine(host.current!, settings, setHud, setError, setRoom, setQueue); } catch { setError('WebGL could not start. Enable hardware acceleration or use a WebGL-capable desktop browser.'); } return () => engine.current?.dispose(); }, []);
