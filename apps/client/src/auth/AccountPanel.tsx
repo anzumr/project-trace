@@ -1,6 +1,6 @@
 import { ProgressPanel } from './ProgressPanel';
 import { useEffect, useState, type FormEvent } from 'react';
-import { supabase, usernameValid, authRedirectFailed, suggestUsername, googleEnabled } from './client';
+import { supabase, usernameValid, authRedirectFailed, suggestUsername, googleEnabled, authErrorMessage } from './client';
 import type { useAccount } from './useAccount';
 import type { Progress } from './useProgress';
 
@@ -12,7 +12,7 @@ export function AccountPanel({ account, inRoom, progress }: { account: ReturnTyp
   const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [username, setUsername] = useState<string | null>(null);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
   const { session, profile, recovery } = account;
-  const [googleOn, setGoogleOn] = useState(false);
+  const [googleOn, setGoogleOn] = useState(false), [resendFor, setResendFor] = useState('');
   useEffect(() => { let alive = true; void googleEnabled().then(on => { if (alive) setGoogleOn(on); }); return () => { alive = false; }; }, []);
   const meta = session?.user.user_metadata, googleUser = session?.user.app_metadata.provider === 'google';
   const suggested = String(meta?.desired_username || suggestUsername(meta?.full_name ?? meta?.name));
@@ -22,6 +22,13 @@ export function AccountPanel({ account, inRoom, progress }: { account: ReturnTyp
     // Success leaves the page for Google; only a failure to start returns here.
     const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/' } });
     if (error) { setError('Google sign-in could not start. Try again, or use email.'); setBusy(false); }
+  };
+  const resend = async () => {
+    if (!supabase || busy) return;
+    setBusy(true); setError(''); setMessage('');
+    const { error } = await supabase.auth.resend({ type: 'signup', email: resendFor, options: { emailRedirectTo: location.origin + '/' } });
+    if (error) setError(authErrorMessage(error, 'resend')); else setMessage(`Confirmation email sent to ${resendFor}. Check spam if it doesn’t arrive.`);
+    setBusy(false);
   };
   const submit = async (e: FormEvent) => {
     e.preventDefault(); if (!supabase || busy || inRoom) return;
@@ -40,15 +47,15 @@ export function AccountPanel({ account, inRoom, progress }: { account: ReturnTyp
       } else if (mode === 'register') {
         if (!usernameValid(username ?? '')) throw new Error('Use 3–16 ASCII letters, numbers or underscores.');
         const { error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { desired_username: username!.trim() }, emailRedirectTo: location.origin + '/' } });
-        if (error) throw new Error('Registration could not complete. Check the password requirements, connection, or try again later.');
-        setPassword(''); setMessage('Check your email for confirmation if required. Then sign in and claim your username. Names are reserved only when claimed.');
+        if (error) throw new Error(authErrorMessage(error, 'sign-up'));
+        setPassword(''); setResendFor(email.trim()); setMessage('Check your email and open the confirmation link, then sign in and claim your username. Names are reserved only when claimed.');
       } else if (mode === 'reset') {
         // Always use the same response, including provider errors, to avoid account enumeration.
         await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: location.origin + '/' });
         setMessage('If an eligible account exists, a recovery email will arrive. Open it in this browser. If none arrives, check spam or retry later.');
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (error) throw new Error('Sign-in failed. Check your credentials, confirm your email, or try again later.');
+        if (error) { if (error.code === 'email_not_confirmed') setResendFor(email.trim()); throw new Error(authErrorMessage(error, 'sign-in')); }
         setPassword('');
       }
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Request failed. Please try again.'); }
@@ -69,7 +76,7 @@ export function AccountPanel({ account, inRoom, progress }: { account: ReturnTyp
         <label>Username<input className="text-input" autoComplete="username" maxLength={16} required value={username ?? profile?.username_display ?? suggested} onChange={e => setUsername(e.target.value)} pattern="[A-Za-z0-9_]{3,16}"/></label>
         <p className="note">3–16 letters, numbers or underscores. Case-insensitive uniqueness; reserved names are unavailable.</p>
       </> : <>
-        <div className="account-tabs">{(['login', 'register', 'reset'] as const).map(value => <button type="button" key={value} aria-pressed={mode === value} onClick={() => { setMode(value); setMessage(''); setError(''); }}>{value === 'login' ? 'Sign in' : value === 'register' ? 'Register' : 'Reset password'}</button>)}</div>
+        <div className="account-tabs">{(['login', 'register', 'reset'] as const).map(value => <button type="button" key={value} aria-pressed={mode === value} onClick={() => { setMode(value); setMessage(''); setError(''); setResendFor(''); }}>{value === 'login' ? 'Sign in' : value === 'register' ? 'Register' : 'Reset password'}</button>)}</div>
         {googleOn && mode !== 'reset' && <><button type="button" className="btn-google" onClick={() => void withGoogle()}><GoogleMark/>{mode === 'register' ? 'Sign up with Google' : 'Sign in with Google'}</button><div className="divider">OR WITH EMAIL</div></>}
         <label>Email<input className="text-input" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)}/></label>
         {mode !== 'reset' && <label>Password<input className="text-input" type="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={mode === 'register' ? 12 : 1} required value={password} onChange={e => setPassword(e.target.value)}/></label>}
@@ -81,7 +88,9 @@ export function AccountPanel({ account, inRoom, progress }: { account: ReturnTyp
     {session && <button className="link-button" style={{ marginTop: 12 }} disabled={busy || inRoom} onClick={() => { setBusy(true); void supabase!.auth.signOut({ scope: 'local' }).then(({ error }) => { setBusy(false); if (error) setError('Sign-out failed. Check your connection and retry.'); }); }}>Sign out of this browser</button>}
     {profile && <p className="note">Input and graphics settings remain saved on this browser.</p>}
     {!session && <p className="note">You can also play private rooms as a guest. Guest matches do not earn persistent progress.</p>}
+    {!session && <p className="note">By creating an account you agree to the <a href="/terms.html">Terms of Service</a> and <a href="/privacy.html">Privacy Policy</a>.</p>}
     </>}
     {message && <p role="status" className="account-message">{message}</p>}{error && <p role="alert" className="error">{error}</p>}
+    {resendFor && !session && <button className="link-button" disabled={busy} onClick={() => void resend()}>Resend confirmation email</button>}
   </div>{profile && <ProgressPanel progress={progress}/>}</div>;
 }

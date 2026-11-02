@@ -24,7 +24,7 @@
 .wrap{max-width:1296px;margin:0 auto}
 .eyebrow{margin:0;font-size:12px;font-weight:600;letter-spacing:3px;color:var(--muted)}
 .display{margin:0;font:italic 800 52px/1.05 var(--display);font-stretch:115%;text-transform:uppercase}
-.note{margin:0;font-size:13px;line-height:1.5;color:var(--faint)}
+.note{margin:0;font-size:13px;line-height:1.5;color:var(--faint)}.note a{color:var(--text-2)}.note a:hover{color:var(--text)}
 .back-link{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0;background:none;border:0;color:var(--muted);font-size:13px;letter-spacing:2px}.back-link:hover{color:var(--text)}
 .card{background:var(--panel);border:1px solid var(--line);padding:24px}
 .card-title{margin:0;font-size:12px;font-weight:600;letter-spacing:3px;color:var(--muted)}

@@ -43,7 +43,7 @@ export function HomeScreen({ account, progress, practiceStarted, wave, play, pra
         <button className="nav-item" onClick={settings}><span><strong>Settings</strong><small>Crosshair, sensitivity, audio, graphics</small></span><Chevron/></button>
       </nav>
       <Controls/>
-      <p className="note" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '18px 0 0 3%', letterSpacing: 2, fontSize: 12 }}><Mouse size={16}/>DESKTOP + MOUSE REQUIRED</p>
+      <p className="note" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '18px 0 0 3%', letterSpacing: 2, fontSize: 12 }}><Mouse size={16}/>DESKTOP + MOUSE REQUIRED<span style={{ marginLeft: 16 }}><a href="/privacy.html">PRIVACY</a> · <a href="/terms.html">TERMS</a></span></p>
     </div>
     <aside className="progress-aside"><ProgressCard account={account} progress={progress} openAccount={openAccount}/></aside>
   </div>;
