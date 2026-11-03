@@ -12,7 +12,7 @@ krazer.io (repo name Project Trace): a first-person 1v1 mouse-tracking duel game
   - `net/Network.ts`.
   - `ui/`: `TopBar`, `HomeScreen`, `PlayScreen`, `RoomScreen`, `QuickPlay` (queue), `SettingsPanel`, `CombatHud`, `CareerScreen` (match history), `settings.ts` including keybinds and game sensitivity matching.
   - `auth/`: `AccountPanel`, `ProgressPanel`, `useProgress`, `client.ts`.
-- `supabase/migrations`: SQL, applied **by hand, once, in order** in the Supabase SQL editor. The first five are applied to the live project; `202611030001_match_history.sql` is not yet.
+- `supabase/migrations`: SQL, applied **by hand, once, in order** in the Supabase SQL editor. All six are applied to the live project.
 - `scripts/`: `dev.mjs`, the production smoke test and the two-browser acceptance test (`browser-matchmaking.ts`).
 
 ## Commands (Windows: use `npm.cmd` in PowerShell)
