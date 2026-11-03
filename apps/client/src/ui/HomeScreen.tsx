@@ -5,7 +5,7 @@ import { defaults, keyLabel, type Keybinds } from './settings';
 
 export const Controls = ({ keys = defaults.keys }: { keys?: Keybinds }) => <div className="controls-row"><span><kbd>{[keys.forward, keys.left, keys.back, keys.right].map(keyLabel).join(' ')}</kbd>Move</span><span><kbd>{keyLabel(keys.jump)}</kbd>Jump</span><span><kbd>{keyLabel(keys.crouch)}</kbd>Crouch</span><span><kbd>HOLD MOUSE 1</kbd>Fire</span><span><kbd>ESC</kbd>Menu</span></div>;
 
-function ProgressCard({ account, progress: p, openAccount }: { account: ReturnType<typeof useAccount>; progress: Progress; openAccount: () => void }) {
+function ProgressCard({ account, progress: p, openAccount, career }: { account: ReturnType<typeof useAccount>; progress: Progress; openAccount: () => void; career: () => void }) {
   if (!account.profile) return <section className="card" aria-label="Your account"><h2 className="card-title">{account.session ? 'FINISH YOUR ACCOUNT' : 'PLAYING AS GUEST'}</h2>
     <p className="note" style={{ margin: '14px 0 18px', fontSize: 15, color: 'var(--text-2)' }}>{account.session ? 'Claim your username to enter Quick Play and start saving results.' : 'Sign in to play Quick Play, earn XP and keep your match history. Practice and private rooms work without an account.'}</p>
     <button className="btn-light" onClick={openAccount}>{account.session ? 'Claim username' : 'Sign in or register'}</button></section>;
@@ -24,14 +24,14 @@ function ProgressCard({ account, progress: p, openAccount }: { account: ReturnTy
         <span className={`tag${h.outcome === 'win' ? '' : ' muted'}`}>{h.outcome.toUpperCase()}</span>
         <span><strong>{kindLabel(h.match_results.kind)}</strong><small>{h.match_results.mode} · {h.rounds_won} rounds won · +{h.xp} XP</small></span>
         <time dateTime={h.match_results.completed_at}>{ago(h.match_results.completed_at)}</time></div>)}
-      <button className="link-button" onClick={openAccount}>All saved matches</button>
+      <button className="link-button" onClick={career}>Full match history</button>
     </section>
   </>;
 }
 
-export function HomeScreen({ account, progress, practiceStarted, wave, keys, play, practice, privateRoom, settings, openAccount }: {
+export function HomeScreen({ account, progress, practiceStarted, wave, keys, play, practice, privateRoom, settings, openAccount, career }: {
   account: ReturnType<typeof useAccount>; progress: Progress; practiceStarted: boolean; wave: number; keys: Keybinds;
-  play: () => void; practice: () => void; privateRoom: () => void; settings: () => void; openAccount: () => void;
+  play: () => void; practice: () => void; privateRoom: () => void; settings: () => void; openAccount: () => void; career: () => void;
 }) {
   return <div className="home wrap">
     <div>
@@ -46,7 +46,7 @@ export function HomeScreen({ account, progress, practiceStarted, wave, keys, pla
       <Controls keys={keys}/>
       <p className="note" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '18px 0 0 3%', letterSpacing: 2, fontSize: 12 }}><Mouse size={16}/>DESKTOP + MOUSE REQUIRED<span style={{ marginLeft: 16 }}><a href="/privacy.html">PRIVACY</a> · <a href="/terms.html">TERMS</a></span></p>
     </div>
-    <aside className="progress-aside"><ProgressCard account={account} progress={progress} openAccount={openAccount}/></aside>
+    <aside className="progress-aside"><ProgressCard account={account} progress={progress} openAccount={openAccount} career={career}/></aside>
   </div>;
 }
 

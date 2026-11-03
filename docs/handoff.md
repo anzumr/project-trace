@@ -88,6 +88,11 @@ The single tabbed menu panel became dedicated screens, designed first on a canva
 - Settings → Controls: "Match sensitivity from" dropdown, then a slider and a number box in that game's units.
 - Not verified: whether Chrome scales raw `movementX` by Windows display scaling. Worth a 360° check on a scaled display.
 
+### 11. Career match history (3 Nov 2026)
+- Migration `202611030001_match_history.sql` adds `match_history(p_kind, p_before, p_limit)`, a security-definer RPC that returns both participants (stats, combat totals, saved rounds) for matches the caller played, newest first, paged by completion time. RLS still limits direct reads to your own row, and opponents' account IDs are not returned. **It must be applied in Supabase before this client is deployed**; until then the screen shows "Match history is not available yet".
+- `ui/CareerScreen.tsx` + `career.css`: a "Career" top-bar button (and "Full match history" on the home card). A filter and all-time totals sit on the left. Each row has your avatar and stats on the left, the result and round score in the middle, and the opponent's stats and avatar on the right. Wins are green, losses red, cancelled grey. Click a row for the full stat comparison and the per-round results.
+- `ui/career.ts` parses rows defensively (tests in `career.test.ts`); `apps/server/src/history.test.ts` covers the RPC on PGlite.
+
 ## External setup done (outside the repo)
 
 - **Supabase**

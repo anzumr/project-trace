@@ -16,6 +16,7 @@ import { useProgress } from './auth/useProgress';
 import { useSocial } from './auth/useSocial';
 import { SocialScreen } from './ui/SocialScreen';
 import { LeaderboardScreen } from './ui/LeaderboardScreen';
+import { CareerScreen } from './ui/CareerScreen';
 import { AccountPanel } from './auth/AccountPanel';
 import { Diagnostics } from './ui/Diagnostics';
 import { Crosshair } from './ui/Crosshair';
@@ -28,7 +29,7 @@ import { RoomScreen } from './ui/RoomScreen';
 import { Back } from './ui/icons';
 import type { QueueState, Snapshot } from '@trace/shared/protocol';
 
-type Screen = 'home' | 'play' | 'settings' | 'account' | 'social' | 'leaderboard';
+type Screen = 'home' | 'play' | 'settings' | 'account' | 'social' | 'leaderboard' | 'career';
 
 function App() {
   const account = useAccount();
@@ -77,6 +78,7 @@ function App() {
   if (screen === 'settings') view = <SettingsPanel settings={settings} change={setSettings} exportReport={() => engine.current?.exportDiagnostics()} back={home} openAccount={() => setScreen('account')}/>;
   else if (screen === 'social') view = <SocialScreen key={account.profile?.user_id??'guest'} social={social} signedIn={!!account.profile} network={engine.current?.network} room={room} blocked={queuing||practiceActive||busy||!engine.current} back={home} openAccount={()=>setScreen('account')} joined={home}/>;
   else if (screen === 'leaderboard') view = <LeaderboardScreen key={account.profile?.user_id??'guest'} userId={account.profile?.user_id} back={home} openAccount={()=>setScreen('account')}/>;
+  else if (screen === 'career') view = <CareerScreen key={account.profile?.user_id??'guest'} userId={account.profile?.user_id} username={account.profile?.username_display} progress={progress} back={home} openAccount={()=>setScreen('account')} leaderboard={()=>setScreen('leaderboard')}/>;
   else if (screen === 'account') view = <div className="wrap"><button className="back-link" onClick={home}><Back size={16}/>BACK</button><div className="page-head" style={{ marginBottom: 24 }}><h1 className="display">Account</h1><p>One identity across your computers. Settings stay on each browser.</p></div><AccountPanel account={account} inRoom={!!room || queuing} progress={progress}/></div>;
   else if (room) view = <RoomScreen room={room} me={me} opponent={opponent} enter={enter} ready={() => { engine.current?.network.ready(); enter(); }} leave={() => { engine.current?.network.leave(); setError(''); }} choose={mode => engine.current?.network.selectMode(mode)}/>;
   else if (queuing) view = <QueueScreen queue={queue} network={engine.current?.network} keys={settings.keys}/>;
@@ -84,7 +86,7 @@ function App() {
   else if (screen === 'play') view = <PlayScreen network={engine.current?.network} quickPlay={!!account.profile && !account.loading} signedIn={!!account.session} username={account.profile?.username_display} busy={busy}
     roomBlocked={queuing || busy || !engine.current || account.loading || (!!account.session && !account.profile)} playerName={playerName} setPlayerName={setPlayerName} code={code} setCode={setCode}
     createRoom={() => void openRoom()} joinRoom={() => void openRoom(code)} practice={startPractice} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} back={home} openAccount={() => setScreen('account')}/>;
-  else view = <HomeScreen account={account} progress={progress} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} keys={settings.keys} play={() => setScreen('play')} practice={startPractice} privateRoom={() => setScreen('play')} settings={() => setScreen('settings')} openAccount={() => setScreen('account')}/>;
+  else view = <HomeScreen account={account} progress={progress} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} keys={settings.keys} play={() => setScreen('play')} practice={startPractice} privateRoom={() => setScreen('play')} settings={() => setScreen('settings')} openAccount={() => setScreen('account')} career={() => setScreen('career')}/>;
   return <><div ref={host} className="arena"/>
     {menuOpen ? <div className={`backdrop${overMatch ? ' over-match' : ''}`}>{screen === 'home' && !room && !queuing && !practiceActive && <svg aria-hidden="true" viewBox="0 0 1440 900" preserveAspectRatio="xMinYMin slice"><line x1="0" y1="330" x2="1440" y2="330" stroke="#14303d"/><line x1="460" y1="0" x2="460" y2="900" stroke="#14303d"/><circle cx="460" cy="330" r="236" fill="none" stroke="#e5212e" strokeOpacity="0.18" strokeWidth="1.5"/><circle cx="460" cy="330" r="300" fill="none" stroke="#14303d"/></svg>}</div> : <div className="vignette"/>}
     {(hud.locked || showResults) && <CombatHud hud={hud} room={room} ownId={me?.id} settings={settings}/>}
@@ -93,7 +95,7 @@ function App() {
     {room && hud.diagnostics && hud.diagnostics.snapshotAge > 1000 && <div className="network-warning" role="status">Connection stalled - movement and firing paused</div>}
     {room && showResults && <RoundResults room={room} ownId={me?.id} close={()=>setDismissedMatch(room.matchId??'')} rematch={()=>engine.current?.network.ready()}/>}
     {practiceSummary && <PracticeResults summary={practiceSummary} close={()=>setPracticeSummary(null)} again={startPractice}/>}
-    {menuOpen && <><TopBar account={account} progress={progress} room={room} queuing={queuing} ping={hud.ping} fps={hud.fps} fullscreen={fullscreen} toggleFullscreen={() => void toggleFullscreen()} home={home} openAccount={() => setScreen('account')} openSettings={() => setScreen('settings')} openSocial={()=>setScreen('social')} openLeaderboard={()=>setScreen('leaderboard')} socialCount={social.count}/>
+    {menuOpen && <><TopBar account={account} progress={progress} room={room} queuing={queuing} ping={hud.ping} fps={hud.fps} fullscreen={fullscreen} toggleFullscreen={() => void toggleFullscreen()} home={home} openAccount={() => setScreen('account')} openSettings={() => setScreen('settings')} openCareer={()=>setScreen('career')} openSocial={()=>setScreen('social')} openLeaderboard={()=>setScreen('leaderboard')} socialCount={social.count}/>
       <main className="screen">{view}</main></>}
     {menuOpen && error && <p role="alert" className="toast-error">{error}</p>}
   </>;

@@ -3,10 +3,10 @@ import type { useAccount } from '../auth/useAccount';
 import type { Progress } from '../auth/useProgress';
 import { Expand, Shrink, Sliders } from './icons';
 
-export function TopBar({ account, progress, room, queuing, ping, fps, fullscreen, toggleFullscreen, home, openAccount, openSettings, openSocial, openLeaderboard, socialCount }: {
+export function TopBar({ account, progress, room, queuing, ping, fps, fullscreen, toggleFullscreen, home, openAccount, openSettings, openCareer, openSocial, openLeaderboard, socialCount }: {
   account: ReturnType<typeof useAccount>; progress: Progress; room: Snapshot | null; queuing: boolean; ping: number; fps: number; fullscreen: boolean;
   toggleFullscreen: () => void; home: () => void; openAccount: () => void; openSettings: () => void;
-  openSocial: () => void; openLeaderboard: () => void; socialCount: number;
+  openCareer: () => void; openSocial: () => void; openLeaderboard: () => void; socialCount: number;
 }) {
   const name = account.profile?.username_display || (account.session ? 'Finish setup' : 'Guest');
   const xpShare = 100 * (progress.xp - progress.start) / Math.max(1, progress.next - progress.start);
@@ -14,6 +14,7 @@ export function TopBar({ account, progress, room, queuing, ping, fps, fullscreen
     <button className="brand" onClick={home} aria-label="krazer.io home"><img src="/brand/favicon-162.png" alt=""/><span>krazer<b>.io</b></span></button>
     {(room || queuing) && <div className={`status-chip${room ? ' live' : ''}`}><i/>{room ? `ROOM ${room.code} · ${Math.round(ping)} MS` : 'SEARCHING FOR MATCH'}</div>}
     <nav aria-label="Account and display">
+      <button className="nav-social" onClick={openCareer}>Career</button>
       <button className="nav-social" onClick={openSocial}>Friends{socialCount>0&&<span className="social-badge">{socialCount}</span>}</button>
       <button className="nav-social" onClick={openLeaderboard}>Leaderboards</button>
       <button className="account-chip" onClick={openAccount}>
