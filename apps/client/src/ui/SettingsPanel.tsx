@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Crosshair } from './Crosshair';
 import { MARKER } from './CombatHud';
-import { ACTIONS, ACTION_LABELS, defaults, keyLabel, normalizeKey, PRESETS, rebind, reservedKey, STYLES, type Action, type Settings } from './settings';
+import { ACTIONS, ACTION_LABELS, defaults, fromScale, keyLabel, normalizeKey, PRESETS, rebind, reservedKey, SCALES, SCALE_INFO, SENS, STYLES, toScale, type Action, type SensScale, type Settings } from './settings';
 
 type Section = 'controls' | 'crosshair' | 'audio' | 'graphics';
-type NumberKey = 'size' | 'opacity' | 'thickness' | 'gap' | 'outlineWidth' | 'sensitivity' | 'hitOpacity' | 'masterVolume' | 'sfxVolume' | 'hitRate' | 'renderScale';
+type NumberKey = 'size' | 'opacity' | 'thickness' | 'gap' | 'outlineWidth' | 'hitOpacity' | 'masterVolume' | 'sfxVolume' | 'hitRate' | 'renderScale';
 type FlagKey = 'outline' | 'invert' | 'hitMarkers' | 'damageNumbers' | 'diagnostics' | 'muteAll' | 'hitSound' | 'headshotSound' | 'killSound' | 'spawnSound';
 const STYLE_LABELS = { dot: 'Dot', cross: 'Cross', circle: 'Circle', 'cross-dot': 'Cross + dot', minimal: 'Minimal' };
 const GLYPHS: Record<Settings['style'], { d: string; ring?: boolean; dot?: number }> = { dot: { d: '', dot: 2.5 }, cross: { d: 'M-10 0H-4M4 0H10M0 -10V-4M0 4V10' }, circle: { d: '', ring: true }, 'cross-dot': { d: 'M-10 0H-4M4 0H10M0 -10V-4M0 4V10', dot: 1.6 }, minimal: { d: 'M-10 0H-5M5 0H10', dot: 1.2 } };
@@ -15,6 +15,8 @@ const percent = (v: number) => `${Math.round(v * 100)}%`;
 export function SettingsPanel({ settings: s, change, exportReport, back, openAccount }: { settings: Settings; change: (settings: Settings) => void; exportReport: () => void; back: () => void; openAccount: () => void }) {
   const [section, setSection] = useState<Section>('crosshair');
   const [listening, setListening] = useState<Action | null>(null), [bindError, setBindError] = useState('');
+  // Holds the sensitivity box text while typing, so "0." isn't reformatted mid-entry.
+  const [sensDraft, setSensDraft] = useState<string | null>(null);
   useEffect(() => {
     if (!listening) return;
     // Capture the next key press for the chosen action; Escape cancels.
@@ -32,6 +34,8 @@ export function SettingsPanel({ settings: s, change, exportReport, back, openAcc
   const slider = (label: string, key: NumberKey, min: number, max: number, step: number, format: (v: number) => string = String) => <label className="setting-row slider">{label}<input type="range" min={min} max={max} step={step} value={s[key]} onChange={e => change({ ...s, [key]: +e.target.value })}/><output>{format(s[key])}</output></label>;
   const toggle = (label: string, key: FlagKey, hint?: string) => <label className="setting-row"><span>{label}{hint && <small>{hint}</small>}</span><input type="checkbox" role="switch" className="switch" checked={s[key]} onChange={e => change({ ...s, [key]: e.target.checked })}/></label>;
   const colors = (label: string, key: 'color' | 'hitColor', list: string[][]) => <div className="setting-row" role="group" aria-label={label}><span>{label}</span><span className="swatches">{list.map(([hex, name]) => <button key={hex} className="swatch" aria-label={name} aria-pressed={s[key].toLowerCase() === hex} style={{ background: hex }} onClick={() => change({ ...s, [key]: hex })}/>)}<input type="color" className="color-input" aria-label={`Custom ${label.toLowerCase()}`} value={s[key]} onChange={e => change({ ...s, [key]: e.target.value })}/></span></div>;
+  const scale = SCALE_INFO[s.sensScale], sens = toScale(s.sensScale, s.sensitivity), native = s.sensScale === 'krazer';
+  const setSens = (value: number) => { if (value > 0) change({ ...s, sensitivity: fromScale(s.sensScale, value) }); };
   const nav: [Section, string][] = [['controls', 'Controls & keybinds'], ['crosshair', 'Crosshair & hit feedback'], ['audio', 'Audio'], ['graphics', 'Graphics']];
   return <div className="settings-layout wrap">
     <nav className="settings-nav" aria-label="Settings sections">
@@ -45,7 +49,13 @@ export function SettingsPanel({ settings: s, change, exportReport, back, openAcc
 
     {section === 'controls' && <div className="settings-body"><div className="settings-col">
       <h2 className="eyebrow">MOUSE</h2>
-      <div className="setting-group">{slider('Sensitivity', 'sensitivity', 0.0003, 0.006, 0.0001, v => v.toFixed(4))}{toggle('Invert Y', 'invert')}<div className="setting-row"><span>Default sensitivity</span><button className="link-button" onClick={() => change({ ...s, sensitivity: defaults.sensitivity })}>Reset sensitivity</button></div></div>
+      <div className="setting-group">
+        <label className="setting-row"><span>Match sensitivity from<small>Pick your game, then enter the sensitivity you use there.</small></span><select value={s.sensScale} onChange={e => { setSensDraft(null); change({ ...s, sensScale: e.target.value as SensScale }); }}>{SCALES.map(id => <option key={id} value={id}>{SCALE_INFO[id].label}</option>)}</select></label>
+        <div className="setting-row slider sens"><span>Sensitivity<small>{scale.hint ?? `As set in ${scale.label}`}</small></span>
+          <input type="range" aria-label="Sensitivity slider" min={scale.step} max={toScale(s.sensScale, SENS.max)} step={scale.step} value={sens} onChange={e => { setSensDraft(null); setSens(+e.target.value); }}/>
+          <input type="number" className="text-input sens-input" aria-label={`${scale.label} sensitivity`} min={0} step={scale.step} inputMode="decimal" value={sensDraft ?? String(+sens.toFixed(native ? 5 : 3))} onChange={e => { setSensDraft(e.target.value); setSens(parseFloat(e.target.value)); }} onBlur={() => setSensDraft(null)}/></div>
+        {toggle('Invert Y', 'invert')}<div className="setting-row"><span>Default sensitivity</span><button className="link-button" onClick={() => { setSensDraft(null); change({ ...s, sensitivity: defaults.sensitivity }); }}>Reset sensitivity</button></div></div>
+      {!native && <p className="note">Matched by mouse distance per 360° turn, so keep the same mouse DPI. Scope and ADS multipliers aren’t converted. Chrome and Edge read raw mouse input; other browsers add your system pointer speed and acceleration.</p>}
       <h2 className="eyebrow">KEYBINDS</h2>
       <div className="setting-group">
         {ACTIONS.map(action => <div className="setting-row" key={action}><span>{ACTION_LABELS[action]}</span>

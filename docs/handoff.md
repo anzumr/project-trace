@@ -82,6 +82,12 @@ The single tabbed menu panel became dedicated screens, designed first on a canva
 - Settings → "Controls & keybinds": click a key, press the new one, Escape cancels. Unrecognised codes and reserved keys are refused. A warning shows if Ctrl is bound.
 - The engine, the fullscreen keyboard lock and the `Controls` hints all read `settings.keys`.
 
+### 10. Sensitivity matching from other games (3 Nov 2026)
+- `ui/settings.ts`: `Settings.sensScale` (`SCALES`: krazer, cs2, valorant, overwatch, rivals, cod, fortnite) picks the units the sensitivity is shown and entered in. `sensitivity` stays the single stored value (radians per mouse count), so the engine is unchanged.
+- `SCALE_INFO[scale].yaw` is degrees per count at sensitivity 1: CS2 0.022, Valorant 0.07, Overwatch 2 and Call of Duty (MW/Warzone/BO6) 0.0066, Marvel Rivals 0.0175, Fortnite 0.005555 per 1%. `toScale`/`fromScale` convert, keeping cm/360 identical at the same DPI. The sensitivity bounds (`SENS`) now go down to 0.0001 for low-sensitivity players.
+- Settings → Controls: "Match sensitivity from" dropdown, then a slider and a number box in that game's units.
+- Not verified: whether Chrome scales raw `movementX` by Windows display scaling. Worth a 360° check on a scaled display.
+
 ## External setup done (outside the repo)
 
 - **Supabase**
