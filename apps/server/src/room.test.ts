@@ -181,3 +181,17 @@ test('crouching shrinks the server hitbox and lowers the shooter eye line', () =
   room.accept('a', { ...neutralInput(40), active: true, crouch: true, firing: true, yaw: 0, pitch: 0 }, now); room.step(now += 17);
   assert.ok(b.state.hp < hp, 'a crouched shooter fires from the lowered eye line');
 });
+test('ranked is first to 3 with a 25-second stats break and no rematch', () => {
+  const results: unknown[] = [], room = new Room('RANKD', { kind: 'ranked', onResult: r => results.push(r) });
+  room.add('a', { userId: 'ua', username: 'A' }); room.add('b', { userId: 'ub', username: 'B' }); room.ready('a'); room.ready('b'); advance(room, CONFIG.countdownSeconds);
+  for (const [index, winner] of ['a', 'b', 'a', 'b', 'a'].entries()) {
+    const a = room.players.get('a')!, b = room.players.get('b')!;
+    a.state.body.x = b.state.body.x = 5; a.state.body.z = 9; b.state.body.z = -9; (winner === 'a' ? b : a).state.hp = 0.2;
+    const now = room.tick * CONFIG.tick * 1000;
+    room.accept(winner, { ...neutralInput(index + 1), active: true, firing: true, yaw: winner === 'a' ? 0 : -Math.PI }, now); room.step(now);
+    if (index < 4) { assert.equal(room.phase, 'roundEnd'); advance(room, 24.9); assert.equal(room.phase, 'roundEnd', 'stats stay up for 25 s'); advance(room, 0.2 + CONFIG.countdownSeconds); assert.equal(room.round, index + 2); }
+  }
+  assert.equal(room.phase, 'finished'); assert.equal(room.players.get('a')!.state.wins, 3); assert.equal(room.players.get('b')!.state.wins, 2);
+  assert.equal(results.length, 1); assert.equal((results[0] as { kind: string }).kind, 'ranked');
+  room.ready('a'); room.ready('b'); assert.equal(room.phase, 'finished', 'no ranked rematch');
+});

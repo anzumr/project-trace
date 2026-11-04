@@ -1,7 +1,7 @@
 import type { CombatStats, RoundCombat } from '@trace/shared/combat';
 import type { ModeId } from '@trace/shared';
 
-export type MatchKind = 'private' | 'public' | 'ai';
+export type MatchKind = 'private' | 'public' | 'ai' | 'ranked';
 export type MatchResult = {
   id: string; kind: MatchKind; mode: ModeId; status: 'completed' | 'forfeit' | 'cancelled';
   startedAt: string; completedAt: string; reason: string;

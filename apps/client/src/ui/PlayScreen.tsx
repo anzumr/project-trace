@@ -1,23 +1,28 @@
 import { useState } from 'react';
 import { CONFIG, MODES, type ModeId } from '@trace/shared';
 import type { Network } from '../net/Network';
+import type { PlayerRank } from '../auth/useProgress';
 import { ModePreview } from './ModePicker';
+import { RankedPanel } from './Ranked';
 import { Arrow, Back, Duel, Target, Users } from './icons';
 
 const modeList = Object.entries(MODES) as [ModeId, (typeof MODES)[ModeId]][];
 const max = { scale: Math.max(...modeList.map(([, m]) => m.scale)), speed: Math.max(...modeList.map(([, m]) => m.speed)), jump: Math.max(...modeList.map(([, m]) => m.jump)) };
 const Stat = ({ label, value, top }: { label: string; value: number; top: number }) => <span className="stat-line">{label}<span className="bar"><i style={{ width: `${100 * value / top}%` }}/></span><b>{value}×</b></span>;
 
-export function PlayScreen({ network, quickPlay, signedIn, username, roomBlocked, busy, playerName, setPlayerName, code, setCode, createRoom, joinRoom, practice, practiceStarted, wave, back, openAccount }: {
-  network?: Network; quickPlay: boolean; signedIn: boolean; username?: string; roomBlocked: boolean; busy: boolean;
+export function PlayScreen({ network, quickPlay, signedIn, username, rank, xp, roomBlocked, busy, playerName, setPlayerName, code, setCode, createRoom, joinRoom, practice, practiceStarted, wave, back, openAccount }: {
+  network?: Network; quickPlay: boolean; signedIn: boolean; username?: string; rank: PlayerRank | null; xp: number; roomBlocked: boolean; busy: boolean;
   playerName: string; setPlayerName: (name: string) => void; code: string; setCode: (code: string) => void;
   createRoom: () => void; joinRoom: () => void; practice: () => void; practiceStarted: boolean; wave: number; back: () => void; openAccount: () => void;
 }) {
   const [mode, setMode] = useState<ModeId>('standard'), [searching, setSearching] = useState(false);
   const find = async () => { setSearching(true); try { await network!.findMatch(mode); } finally { setSearching(false); } };
+  const ranked = async () => { setSearching(true); try { await network!.findRanked(); } finally { setSearching(false); } };
   return <div className="wrap">
     <button className="back-link" onClick={back}><Back size={16}/>MAIN MENU</button>
     <div className="page-head"><h1 className="display">Play</h1><p>Choose how to play. In Quick Play, both players use the character mode you queue for.</p></div>
+
+    <RankedPanel rank={rank} xp={xp} eligible={quickPlay} signedIn={signedIn} busy={!network || searching || busy} find={() => void ranked()} openAccount={openAccount}/>
 
     <div className="mode-cards">
       <section className="mode-card featured" aria-label="Quick Play">

@@ -77,3 +77,21 @@ test('real sockets: full three-round match, names, countdown, movement, damage, 
     b.disconnect(); await until(()=>sa?.phase==='finished'); assert.equal(sa!.winner,a.id); assert.equal(sa!.players.length,1); assert.match(sa!.reason,/disconnected/);
   } finally { intervals.forEach(clearInterval); clients.forEach(c=>c.disconnect()); await server.close(); }
 });
+test('real sockets: ranked join checks level through the rank lookup and seats two players in a ranked room', { timeout: 15000 }, async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises'), { tmpdir } = await import('node:os'), { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'ranked-')), clients: Client[] = [];
+  const server = createGameServer({ outboxDirectory: dir, resultSink: async () => {}, verifyIdentity: async token => ({ userId: token, username: token, expiresAt: Date.now() + 3_600_000 }),
+    rankLookup: async uid => ({ points: uid === 'beta' ? 150 : 100, level: uid === 'newbie' ? 2 : 6 }) });
+  try {
+    await new Promise<void>(resolve => server.http.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(server.http.address() as AddressInfo).port}`;
+    const connect = async (token: string) => { const socket: Client = io(url, { transports: ['websocket'], reconnection: false, auth: { token } }); clients.push(socket); await new Promise<void>((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); }); return socket; };
+    const join = (socket: Client) => new Promise<{ ok: boolean; error?: string }>(resolve => socket.emit('rankedJoin', resolve));
+    assert.match((await join(await connect('newbie'))).error!, /level 5/);
+    const [a, b] = [await connect('alpha'), await connect('beta')], seen: Snapshot[] = [];
+    a.on('snapshot', s => seen.push(s));
+    assert.ok((await join(a)).ok); assert.ok((await join(b)).ok);
+    await until(() => seen.some(s => s.kind === 'ranked' && s.players.length === 2));
+    assert.equal(seen.at(-1)!.mode, 'standard');
+  } finally { clients.forEach(c => c.disconnect()); await server.close(); await rm(dir, { recursive: true, force: true }); }
+});

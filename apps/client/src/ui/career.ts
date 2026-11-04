@@ -3,7 +3,8 @@ import { accuracy, type CombatStats } from '@trace/shared/combat';
 
 export type CareerRound = { round: number; result: 'won' | 'lost' | 'draw'; reason: string; duration: number; stats: CombatStats | null };
 export type CareerPlayer = { name: string; me: boolean; bot: boolean; outcome: 'win' | 'loss' | 'cancelled'; roundsWon: number; damage: number; received: number; xp: number; combat: CombatStats | null; rounds: CareerRound[] };
-export type CareerMatch = { id: string; kind: 'public' | 'private' | 'ai'; mode: ModeId; status: 'completed' | 'forfeit' | 'cancelled'; reason: string; startedAt: string; completedAt: string; me: CareerPlayer; them: CareerPlayer };
+export type CareerRank = { before: number; after: number; delta: number; multiplier: number; decay: number; flagged: boolean };
+export type CareerMatch = { id: string; kind: 'public' | 'private' | 'ai' | 'ranked'; mode: ModeId; status: 'completed' | 'forfeit' | 'cancelled'; reason: string; startedAt: string; completedAt: string; me: CareerPlayer; them: CareerPlayer; rank: CareerRank | null };
 
 type Raw = Record<string, unknown>;
 const object = (v: unknown): Raw | null => v && typeof v === 'object' && !Array.isArray(v) ? v as Raw : null;
@@ -22,13 +23,17 @@ function player(v: unknown): CareerPlayer | null {
   const rounds = (Array.isArray(p.rounds) ? p.rounds : []).flatMap(v => { const r = object(v); return r ? [{ round: number(r.round), result: r.winner === id ? 'won' as const : typeof r.winner === 'string' ? 'lost' as const : 'draw' as const, reason: text(r.reason), duration: number(r.duration), stats: stats((Array.isArray(r.players) ? r.players : []).map(object).find(v => v?.id === id)?.stats) }] : []; });
   return { name: text(p.name) || 'Unknown', me: p.me === true, bot: p.bot === true, outcome, roundsWon: number(p.rounds_won), damage: number(p.damage_milli) / 1000, received: number(p.received_milli) / 1000, xp: number(p.xp), combat: stats(p.combat), rounds };
 }
+function rank(v: unknown): CareerRank | null {
+  const r = object(v);
+  return r ? { before: number(r.before), after: number(r.after), delta: number(r.delta), multiplier: number(r.multiplier) || 1, decay: typeof r.decay === 'number' ? r.decay : 1, flagged: r.flagged === true } : null;
+}
 /** Normalizes `match_history` rows; anything malformed is dropped rather than shown wrong. */
 export function parseHistory(value: unknown): CareerMatch[] {
   return (Array.isArray(value) ? value : []).flatMap(v => {
     const m = object(v), players = Array.isArray(m?.players) ? m.players.map(player) : [];
     const me = players.find(p => p?.me), them = players.find(p => p && !p.me);
-    if (!m || !me || !them || !['public', 'private', 'ai'].includes(m.kind as string) || !isMode(m.mode) || !['completed', 'forfeit', 'cancelled'].includes(m.status as string)) return [];
-    return [{ id: text(m.id), kind: m.kind as CareerMatch['kind'], mode: m.mode, status: m.status as CareerMatch['status'], reason: text(m.reason), startedAt: text(m.started_at), completedAt: text(m.completed_at), me, them }];
+    if (!m || !me || !them || !['public', 'private', 'ai', 'ranked'].includes(m.kind as string) || !isMode(m.mode) || !['completed', 'forfeit', 'cancelled'].includes(m.status as string)) return [];
+    return [{ id: text(m.id), kind: m.kind as CareerMatch['kind'], mode: m.mode, status: m.status as CareerMatch['status'], reason: text(m.reason), startedAt: text(m.started_at), completedAt: text(m.completed_at), me, them, rank: rank(m.rank) }];
   });
 }
 export const percent = (s: CombatStats | null) => { const a = s ? accuracy(s) : null; return a === null ? '—' : `${a.toFixed(1)}%`; };

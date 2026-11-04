@@ -5,10 +5,11 @@ import { supabase } from '../auth/client';
 import { accuracyOf, ago, kindLabel, type Progress } from '../auth/useProgress';
 import { duration, headShare, outcomeClass, outcomeLabel, parseHistory, percent, type CareerMatch, type CareerPlayer } from './career';
 import { Back, Chevron } from './icons';
+import { RankSummary } from './Ranked';
 import './career.css';
 
 const PAGE = 20;
-const FILTERS: [string, string][] = [['', 'All matches'], ['public', 'Quick Play'], ['private', 'Private duels'], ['ai', 'Extra Hard AI']];
+const FILTERS: [string, string][] = [['', 'All matches'], ['ranked', 'Ranked'], ['public', 'Quick Play'], ['private', 'Private duels'], ['ai', 'Extra Hard AI']];
 const historyError = (e: { code?: string; message: string }) => ['PGRST202', '42883'].includes(e.code ?? '') ? 'Match history is not available yet. Please try again later.' : e.message;
 const seconds = (pick: (s: CombatStats) => number) => (p: CareerPlayer) => p.combat ? `${pick(p.combat).toFixed(2)}s` : '—';
 const STATS: [string, (p: CareerPlayer) => string][] = [['Rounds won', p => String(p.roundsWon)], ['Tracking accuracy', p => percent(p.combat)], ['Damage dealt', p => p.damage.toFixed(1)], ['Damage received', p => p.received.toFixed(1)],
@@ -27,7 +28,7 @@ function Detail({ m }: { m: CareerMatch }) {
     <div className="career-rounds"><h3>Rounds</h3>
       {m.me.rounds.length === 0 ? <p className="note">Round details weren’t saved for this match.</p> : m.me.rounds.map(r => { const theirs = m.them.rounds.find(t => t.round === r.round);
         return <div key={r.round} className={`career-round ${r.result === 'won' ? 'win' : r.result === 'lost' ? 'loss' : 'void'}`}><b>R{r.round}</b><span><strong>{r.result === 'won' ? 'Won' : r.result === 'lost' ? 'Lost' : 'Draw'}</strong><small>{r.reason} · {r.duration.toFixed(1)}s</small></span><span className="career-dmg">{r.stats ? r.stats.damage.toFixed(0) : '—'}<i>–</i>{theirs?.stats ? theirs.stats.damage.toFixed(0) : '—'}<small>DAMAGE</small></span></div>; })}
-      <p className="note">{m.reason} · {new Date(m.completedAt).toLocaleString()} · {duration(m)} · +{m.me.xp} XP</p></div>
+      <p className="note">{m.reason} · {new Date(m.completedAt).toLocaleString()} · {duration(m)} · +{m.me.xp} XP{m.rank && ` · ${m.rank.delta >= 0 ? '+' : '−'}${Math.abs(m.rank.delta)} RP${m.rank.decay < 1 ? ` (repeat opponent ×${m.rank.decay})` : ''}${m.rank.multiplier > 1 && m.rank.decay === 1 ? ` (streak ×${m.rank.multiplier})` : ''}${m.rank.flagged && m.rank.delta === 0 ? ' (opponent barely played)' : ''}`}</p></div>
   </div>;
 }
 
@@ -68,6 +69,7 @@ export function CareerScreen({ userId, username, progress: p, back, openAccount,
           <div className="career-me"><span className="career-avatar me" aria-hidden="true">{username?.[0] ?? '?'}</span><span><strong>{username}</strong><small>LEVEL {p.level} · {p.xp - p.start} / {p.next - p.start} XP</small></span></div>
           <div className="xp-bar" role="progressbar" aria-label="Level progress" aria-valuemin={0} aria-valuemax={p.next - p.start} aria-valuenow={p.xp - p.start}><i style={{ width: `${xpShare}%` }}/></div>
           <h2 className="card-title">{FILTERS.find(([id]) => id === kind)![1]} · all time</h2>
+          {p.rank && p.rank.wins + p.rank.losses > 0 && <div className="career-rank"><RankSummary rank={p.rank} size={56}/></div>}
           {p.error ? <p className="error">{p.error}</p> : <Totals progress={p} kind={kind}/>}
         </div>
         <button className="btn-ghost" disabled={loading} onClick={() => { setRevision(r => r + 1); p.refresh(); }}>Refresh</button>
@@ -83,7 +85,7 @@ export function CareerScreen({ userId, username, progress: p, back, openAccount,
             <button className="career-row" aria-expanded={expanded} onClick={() => setOpen(expanded ? '' : m.id)}>
               <Side p={m.me}/>
               <span className="career-score"><strong>{outcomeLabel(m)}</strong><span className="career-result"><b className={m.me.outcome === 'win' ? 'w' : ''}>{m.me.roundsWon}</b><i>–</i><b className={m.them.outcome === 'win' ? 'w' : ''}>{m.them.roundsWon}</b></span>
-                <small>{kindLabel(m.kind)} · {mode} · <time dateTime={m.completedAt}>{ago(m.completedAt)}</time>{m.status === 'forfeit' && ' · Forfeit'}</small><Chevron size={16}/></span>
+                <small>{kindLabel(m.kind)} · {mode} · <time dateTime={m.completedAt}>{ago(m.completedAt)}</time>{m.status === 'forfeit' && ' · Forfeit'}</small>{m.rank && <span className={`career-rp ${m.rank.delta > 0 ? 'up' : m.rank.delta < 0 ? 'down' : ''}`}>{m.rank.delta > 0 ? '+' : m.rank.delta < 0 ? '−' : '±'}{Math.abs(m.rank.delta)} RP</span>}<Chevron size={16}/></span>
               <Side p={m.them}/>
             </button>
             {expanded && <Detail m={m}/>}

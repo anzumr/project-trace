@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Engine, type Hud, type PracticeSummary } from './game/Engine';
 import './style.css';
+import './ui/ranked.css';
 import { loadSettings, lockCodes } from './ui/settings';
 import { SettingsPanel } from './ui/SettingsPanel';
 import { useAccount } from './auth/useAccount';
@@ -83,7 +84,7 @@ function App() {
   else if (room) view = <RoomScreen room={room} me={me} opponent={opponent} enter={enter} ready={() => { engine.current?.network.ready(); enter(); }} leave={() => { engine.current?.network.leave(); setError(''); }} choose={mode => engine.current?.network.selectMode(mode)}/>;
   else if (queuing) view = <QueueScreen queue={queue} network={engine.current?.network} keys={settings.keys}/>;
   else if (practiceActive) view = <PauseMenu wave={hud.wave} kills={hud.kills} resume={enter} restart={() => { engine.current?.reset(); enter(); }} end={() => { const summary = engine.current?.endPractice(); if (summary) setPracticeSummary(summary); setPracticeActive(false); }} settings={() => setScreen('settings')} menu={() => setPracticeActive(false)}/>;
-  else if (screen === 'play') view = <PlayScreen network={engine.current?.network} quickPlay={!!account.profile && !account.loading} signedIn={!!account.session} username={account.profile?.username_display} busy={busy}
+  else if (screen === 'play') view = <PlayScreen network={engine.current?.network} quickPlay={!!account.profile && !account.loading} signedIn={!!account.session} username={account.profile?.username_display} rank={progress.rank} xp={progress.xp} busy={busy}
     roomBlocked={queuing || busy || !engine.current || account.loading || (!!account.session && !account.profile)} playerName={playerName} setPlayerName={setPlayerName} code={code} setCode={setCode}
     createRoom={() => void openRoom()} joinRoom={() => void openRoom(code)} practice={startPractice} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} back={home} openAccount={() => setScreen('account')}/>;
   else view = <HomeScreen account={account} progress={progress} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} keys={settings.keys} play={() => setScreen('play')} practice={startPractice} privateRoom={() => setScreen('play')} settings={() => setScreen('settings')} openAccount={() => setScreen('account')} career={() => setScreen('career')}/>;

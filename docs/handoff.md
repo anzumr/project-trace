@@ -93,6 +93,14 @@ The single tabbed menu panel became dedicated screens, designed first on a canva
 - `ui/CareerScreen.tsx` + `career.css`: a "Career" top-bar button (and "Full match history" on the home card). A filter and all-time totals sit on the left. Each row has your avatar and stats on the left, the result and round score in the middle, and the opponent's stats and avatar on the right. Wins are green, losses red, cancelled grey. Click a row for the full stat comparison and the per-round results.
 - `ui/career.ts` parses rows defensively (tests in `career.test.ts`); `apps/server/src/history.test.ts` covers the RPC on PGlite.
 
+### 12. Ranked mode (4 Nov 2026)
+- Rules: Standard character, first to 3 rounds, 25 s stats break, no rematch, no AI. 8 tiers (Bronze, Silver, Gold, Platinum, Emerald, Diamond, Masters, Grand Masters) × divisions 4→1, 100 RP each; everyone starts at Bronze 4, 0 RP; Grand Masters 1 is uncapped. Ranked unlocks at account level 5.
+- Points (`packages/shared/src/ranked.ts`, `rankStep`): Elo-style expected score on total RP (800 scale); even match ±30, clamped 5–55 before streaks; streak multipliers ×1.3 / 1.45 / 1.6 / 1.75 from the 3rd straight result; 3-game promotion shield; repeat opponent within 24 h pays ×0.5 then ×0; if the loser fired under 10% of their play time or dealt under 15 damage, the winner gets 0 (both rows flagged). Discounted or thrown games don't build streaks. Approved preview: https://claude.ai/artifact/Ryxoetoc3zBrViA9bZmoaM
+- Migration `202611040001_ranked.sql`: allows kind 'ranked' and 3 rounds won, adds `player_ranks` and `rank_history` (own-row RLS), `trace_private.rank_step` (mirror of `rankStep`; `apps/server/src/ranked.test.ts` checks they agree), `apply_ranked` (called once from `record_match`), `ranked_profile` (service role), `ranked_leaderboard`, and `match_history` with the caller's rank change. **Applied to live Supabase on 4 Nov 2026.**
+- Server: `rankedJoin` socket event → `ranks.ts` reads RP and XP with the secret key → `Matchmaking.joinRanked`. Range ±300 RP, +150 every 15 s, anyone after 90 s; never pairs two players from the same IP (`true-client-ip` / `cf-connecting-ip` from Cloudflare; unknown locally, so local testing is not blocked).
+- Client: `RankEmblem.tsx` (all 32 emblems as SVG), `Ranked.tsx` (Play screen panel, rank-change card on final results), ranked leaderboard, Career filter and RP per match, rank on the home card.
+- `202611030001_match_history.sql` was committed empty in `b6994d3` (the live function was applied from the original text); its content is restored here.
+
 ## External setup done (outside the repo)
 
 - **Supabase**

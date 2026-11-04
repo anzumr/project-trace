@@ -6,6 +6,7 @@
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
     "./practice": "./src/practice.ts",
-    "./combat": "./src/combat.ts"
+    "./combat": "./src/combat.ts",
+    "./ranked": "./src/ranked.ts"
   }
 }

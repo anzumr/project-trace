@@ -29,7 +29,13 @@ test('losses, cancellations and old matches without combat stats display safely'
 });
 test('malformed rows are dropped instead of rendered wrong', () => {
   assert.deepEqual(parseHistory(null), []); assert.deepEqual(parseHistory({}), []);
-  for (const over of [{ kind: 'ranked' }, { mode: 'giant' }, { status: 'won' }, { players: [] }, { players: [raw().players[1]] }, { players: raw().players.map(p => ({ ...p, me: false })) }])
+  for (const over of [{ kind: 'ladder' }, { mode: 'giant' }, { status: 'won' }, { players: [] }, { players: [raw().players[1]] }, { players: raw().players.map(p => ({ ...p, me: false })) }])
     assert.deepEqual(parseHistory([raw(over)]), [], JSON.stringify(over).slice(0, 40));
   assert.equal(parseHistory([raw(), 'junk', raw({ id: 'm2' })]).length, 2);
+});
+test('ranked rows carry the caller’s rank change; other kinds have none', () => {
+  const [m] = parseHistory([raw({ kind: 'ranked', rank: { before: 640, after: 679, delta: 39, multiplier: 1.3, decay: 1, flagged: false } })]);
+  assert.equal(m.kind, 'ranked'); assert.deepEqual(m.rank, { before: 640, after: 679, delta: 39, multiplier: 1.3, decay: 1, flagged: false });
+  assert.equal(parseHistory([raw()])[0].rank, null);
+  assert.equal(parseHistory([raw({ kind: 'ranked', rank: { before: 0, after: 0, delta: 0, multiplier: 1, decay: 0, flagged: true } })])[0].rank?.decay, 0, 'a zero decay is kept, not defaulted');
 });

@@ -2,6 +2,7 @@ import { emptyCombat, measureCombat, type RoundCombat } from '@trace/shared/comb
 import { CONFIG, ARENA_SOLIDS, spawn, move, arenaRay, MODES, isMode, eyeHeight, stance, type ModeId, type Vec3 } from '@trace/shared';
 import { BOT_MODEL, HEADSHOT_MULTIPLIER, tracePracticeModel } from '@trace/shared/practice';
 import { neutralInput, validateInput, type PlayerInput, type PlayerState, type Snapshot } from '@trace/shared/protocol';
+import { matchRules } from '@trace/shared/ranked';
 import { randomUUID } from 'node:crypto';
 import { ExtraHardAI, visiblePoint } from './ExtraHardAI';
 import type { MatchKind, MatchResult } from './Results';
@@ -42,7 +43,8 @@ export class Room {
   roundSerial = 0;
   roundWinner: string | null = null;
   private remainingTicks = 0;
-  constructor(readonly code: string, private options: { kind?: MatchKind; onResult?: (result: MatchResult, room: Room) => void } = {}) { this.kind = options.kind ?? 'private'; }
+  readonly rules: ReturnType<typeof matchRules>;
+  constructor(readonly code: string, private options: { kind?: MatchKind; onResult?: (result: MatchResult, room: Room) => void } = {}) { this.kind = options.kind ?? 'private'; this.rules = matchRules(this.kind); }
   addBot() {
     const id = randomUUID(); if (!this.add(id)) return;
     const p = this.players.get(id)!; p.state.name = 'Extra Hard AI [BOT]'; p.state.bot = true;
@@ -89,7 +91,8 @@ export class Room {
     return true;
   }
   ready(id: string, revision = this.modeRevision) {
-    if (this.paused || [...this.players.values()].some(p => p.state.connected === false) || (this.kind === 'ai' && this.phase === 'finished')) return;
+    // No rematches against the AI, and none in ranked, where repeat games would only feed the repeat-opponent decay.
+    if (this.paused || [...this.players.values()].some(p => p.state.connected === false) || ((this.kind === 'ai' || this.kind === 'ranked') && this.phase === 'finished')) return;
     if (revision !== this.modeRevision) return;
     const p = this.players.get(id); if (!p || !['lobby', 'finished'].includes(this.phase) || this.players.size !== 2) return;
     p.state.ready = true;
@@ -145,10 +148,10 @@ export class Room {
     this.captureRound(winner,reason);
     this.players.forEach(p=>{p.state.matchStats!.streak=0;});
     this.clearInputs();
-    if (winner && this.players.get(winner)!.state.wins >= CONFIG.winsRequired) {
+    if (winner && this.players.get(winner)!.state.wins >= this.rules.wins) {
       this.phase = 'finished'; this.winner = winner; this.remainingTicks = 0;
       this.finishResult('completed');
-    } else { this.phase = 'roundEnd'; this.remainingTicks = Math.round(CONFIG.roundSummarySeconds / CONFIG.tick); }
+    } else { this.phase = 'roundEnd'; this.remainingTicks = Math.round(this.rules.summarySeconds / CONFIG.tick); }
   }
   accept(id: string, raw: unknown, now: number) {
     const p = this.players.get(id); if (!p || !validateInput(raw) || raw.seq <= p.lastSeq) return false;

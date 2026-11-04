@@ -36,6 +36,8 @@
 .career-dmg{text-align:right;font:700 16px var(--display);font-variant-numeric:tabular-nums}.career-dmg i{margin:0 6px;font-style:normal;color:var(--faint)}.career-dmg small{font:600 10px var(--body);letter-spacing:1.5px}
 .career-rounds .note{margin-top:12px;font-size:12px}
 .career-more{display:block;margin:16px auto 0}
+.career-rp{font:700 13px var(--display);letter-spacing:1px;color:var(--muted);font-variant-numeric:tabular-nums}.career-rp.up{color:var(--win)}.career-rp.down{color:var(--loss)}
+.career-rank{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.career-rank .rank-summary strong{font-size:20px}.career-rank .rank-bar{width:150px}
 @media (max-width:1280px){.career-layout{grid-template-columns:1fr}.career-totals{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media (max-width:1000px){.career-detail{grid-template-columns:1fr}.career-totals{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:1000px){.career-avatar{width:56px;height:56px;font-size:26px}.career-row{min-height:56px;gap:8px;grid-template-columns:minmax(0,1fr) 96px minmax(0,1fr)}.career-big{font-size:15px}.career-big i{display:none}.career-who small{display:none}.career-score small{display:none}.career-tabs button{padding:10px 14px}}

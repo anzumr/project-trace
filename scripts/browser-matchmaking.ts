@@ -47,7 +47,7 @@ try{
     console.log('Live mode: temporary QA accounts authenticated and usernames claimed. Credentials are kept in memory.');
   }else{
   await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key,email_confirmed_at timestamptz);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;`);
-  for(const name of ['202610270001_accounts.sql','202610280001_match_results.sql','202610310001_combat_stats.sql','202611010001_permanent_usernames.sql','202611020001_social_leaderboards.sql'])await db.exec(await readFile(resolve('supabase/migrations',name),'utf8'));
+  for(const name of ['202610270001_accounts.sql','202610280001_match_results.sql','202610310001_combat_stats.sql','202611010001_permanent_usernames.sql','202611020001_social_leaderboards.sql','202611030001_match_history.sql','202611040001_ranked.sql'])await db.exec(await readFile(resolve('supabase/migrations',name),'utf8'));
   for(let i=0;i<2;i++){await db.query('insert into auth.users values($1,now())',[ids[i]]);await db.query('insert into public.profiles(user_id,username_display) values($1,$2)',[ids[i],names[i]]);}
   }
   process.env.ALLOWED_ORIGINS='http://127.0.0.1:4187';
@@ -85,6 +85,7 @@ try{
       else if(path==='/rest/v1/profiles')data=(await db.query('select * from public.profiles where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/player_progress')data=(await db.query('select * from public.player_progress where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/player_combat_stats')data=(await db.query('select * from public.player_combat_stats where user_id=$1',[ids[i]])).rows;
+      else if(path==='/rest/v1/player_ranks')data=(await db.query('select * from public.player_ranks where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/player_stats')data=(await db.query('select * from public.player_stats where user_id=$1',[ids[i]])).rows;
       else if(path==='/rest/v1/match_results')data=(await db.query(`select m.kind,m.mode,m.completed_at,m.status,json_build_array(json_build_object('outcome',p.outcome,'xp',p.xp,'rounds_won',p.rounds_won)) as match_participants from public.match_results m join public.match_participants p on m.id=p.match_id where p.user_id=$1 order by m.completed_at desc limit 10`,[ids[i]])).rows;
       else if(path==='/auth/v1/user')data=session.user;

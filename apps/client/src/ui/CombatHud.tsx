@@ -3,6 +3,8 @@ import './combat.css';
 import { CONFIG } from '@trace/shared';
 import { accuracy, emptyCombat, type CombatStats } from '@trace/shared/combat';
 import { PRACTICE } from '@trace/shared/practice';
+import { matchRules } from '@trace/shared/ranked';
+import { RankChange } from './Ranked';
 import type { Snapshot } from '@trace/shared/protocol';
 import type { Hud, PracticeSummary } from '../game/Engine';
 import type { Settings } from './settings';
@@ -35,7 +37,7 @@ export function CombatHud({hud,room,ownId,settings}:{hud:Hud;room:Snapshot|null;
   useEffect(()=>{if(!hud.lastWave)return;setWave(hud.lastWave);const timer=setTimeout(()=>setWave(null),2300);return()=>clearTimeout(timer);},[hud.lastWave]);
   useEffect(()=>{const delta=stats.damage-previousDamage.current;previousDamage.current=stats.damage;if(delta>0)setFloating(f=>({value:delta,id:f.id+1}));},[stats.damage]);
   const message=room && centerMessage(room,hud.locked);
-  const pips=(wins:number)=><span className="pips">{Array.from({length:CONFIG.winsRequired},(_,i)=><i key={i} className={i<wins?'won':''}/>)}</span>;
+  const pips=(wins:number)=><span className="pips">{Array.from({length:matchRules(room?.kind).wins},(_,i)=><i key={i} className={i<wins?'won':''}/>)}</span>;
   return <div className="combat-hud">
     <div className="hud-meta"><span>FPS {Math.round(hud.fps)}</span><span>{room?`PING ${Math.round(hud.ping)} MS`:'OFFLINE PRACTICE'}</span></div>
     <section className="hud-top" aria-label={room?'Opponent and round':'Practice target'}>
@@ -71,8 +73,8 @@ export function RoundResults({room,ownId,close,rematch}:{room:Snapshot;ownId?:st
     <div className="segmented" role="group" aria-label="Statistics range"><button aria-pressed={!totals} onClick={()=>setTotals(false)}>THIS ROUND</button><button aria-pressed={totals} onClick={()=>setTotals(true)}>MATCH TOTALS</button></div>
     <table><thead><tr><th scope="col">{totals?'MATCH TOTALS':`ROUND ${r.round}`}</th>{shown.map(p=><th scope="col" key={p.id}>{(totals?finished && room.winner===p.id:r.winner===p.id)&&<span className="tag">WIN</span>}{p.id===ownId?'You':p.name}</th>)}</tr></thead>
       <tbody>{metrics.map(([label,format])=><tr key={label}><th scope="row">{label}</th>{shown.map(p=><td key={p.id} className={p.id===ownId?'mine':''}>{format(p.stats)}</td>)}</tr>)}<tr><th scope="row">Remaining health</th>{players.map(p=><td key={p.id} className={p.id===ownId?'mine':''}>{p.hp.toFixed(1)}</td>)}</tr></tbody></table>
-    {finished?<div className="final"><p>{room.winner?`${room.players.find(p=>p.id===room.winner)?.name} wins the match`:'Match ended'} · {room.resultState==='saved'?'Saved':room.resultState==='unavailable'?'Saving unavailable':'Saving / retrying…'}</p>{room.kind!=='ai' && <button className="btn-primary" disabled={room.players.length!==2 || room.players.some(p=>p.connected===false) || room.players.find(p=>p.id===ownId)?.ready} onClick={rematch}><strong>{room.players.find(p=>p.id===ownId)?.ready?'WAITING FOR OPPONENT…':room.players.some(p=>p.id!==ownId && p.ready)?'ACCEPT REMATCH':'REMATCH'}</strong><Arrow size={24}/></button>}<button className="btn-ghost" onClick={close}>RETURN TO MATCH MENU</button></div>
-      :<div className="next-row"><span>NEXT ROUND IN {Math.ceil(room.remaining)}</span><span className="bar" role="progressbar" aria-label="Time until next round" aria-valuemin={0} aria-valuemax={CONFIG.roundSummarySeconds} aria-valuenow={CONFIG.roundSummarySeconds-room.remaining}><i style={{width:`${100*(1-room.remaining/CONFIG.roundSummarySeconds)}%`}}/></span><small>ESC releases the mouse</small></div>}
+    {finished?<div className="final"><p>{room.winner?`${room.players.find(p=>p.id===room.winner)?.name} wins the match`:'Match ended'} · {room.resultState==='saved'?'Saved':room.resultState==='unavailable'?'Saving unavailable':'Saving / retrying…'}</p>{room.kind==='ranked' && <RankChange matchId={room.matchId} saved={room.resultState==='saved'}/>}{room.kind!=='ai' && room.kind!=='ranked' && <button className="btn-primary" disabled={room.players.length!==2 || room.players.some(p=>p.connected===false) || room.players.find(p=>p.id===ownId)?.ready} onClick={rematch}><strong>{room.players.find(p=>p.id===ownId)?.ready?'WAITING FOR OPPONENT…':room.players.some(p=>p.id!==ownId && p.ready)?'ACCEPT REMATCH':'REMATCH'}</strong><Arrow size={24}/></button>}<button className="btn-ghost" onClick={close}>RETURN TO MATCH MENU</button></div>
+      :<div className="next-row"><span>NEXT ROUND IN {Math.ceil(room.remaining)}</span><span className="bar" role="progressbar" aria-label="Time until next round" aria-valuemin={0} aria-valuemax={matchRules(room.kind).summarySeconds} aria-valuenow={matchRules(room.kind).summarySeconds-room.remaining}><i style={{width:`${100*(1-room.remaining/matchRules(room.kind).summarySeconds)}%`}}/></span><small>ESC releases the mouse</small></div>}
   </section></div>;
 }
 export function PracticeResults({summary,close,again}:{summary:PracticeSummary;close:()=>void;again:()=>void}){

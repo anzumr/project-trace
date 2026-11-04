@@ -1,13 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { isMode, type ModeId } from '@trace/shared';
 import type { ActionReply, QueueState } from '@trace/shared/protocol';
+import { RANKED, rankedWindow } from '@trace/shared/ranked';
 import { Room } from './game/Room';
 import type { Identity } from './auth';
 
 export const BOT_WAIT_MS = 300_000;
 export const RECONNECT_MS = 20_000;
 export type QueuePeer = { id: string; identity: Identity; queue: (state: QueueState)=>void; attach: (room:Room,playerId:string)=>void };
-type Entry = { peer: QueuePeer; mode:ModeId; accumulated:number; since:number; disconnectedAt?:number };
+/** `ip` is the player's network as reported by the edge proxy, or null when unknown (local play). */
+export type RankedProfile = { points:number; level:number; ip:string|null };
+type Entry = { peer: QueuePeer; mode:ModeId; accumulated:number; since:number; disconnectedAt?:number; ranked?:RankedProfile };
 type Seat = { peer:QueuePeer; room:Room; playerId:string; disconnectedAt?:number };
 const ok = ():ActionReply=>({ok:true});
 const fail = (error:string):ActionReply=>({ok:false,error});
@@ -16,7 +19,7 @@ export class Matchmaking {
   private waiting=new Map<string,Entry>();
   private seats=new Map<string,Seat>();
   private roomTimes=new Map<Room,{created:number;finished?:number}>();
-  constructor(private rooms:Map<string,Room>,private makeRoom:(kind:'public'|'ai')=>Room,private available:()=>boolean,private clock:()=>number=()=>performance.now()){}
+  constructor(private rooms:Map<string,Room>,private makeRoom:(kind:'public'|'ai'|'ranked')=>Room,private available:()=>boolean,private clock:()=>number=()=>performance.now()){}
   hasActivity(userId:string){return this.waiting.has(userId)||this.seats.has(userId);}
   ownsSeat(peer:QueuePeer){return this.seats.get(peer.identity.userId)?.peer.id===peer.id;}
   connect(peer:QueuePeer):boolean {
@@ -34,10 +37,20 @@ export class Matchmaking {
     const uid=peer.identity.userId;
     if(this.seats.has(uid))return fail('Leave your current match first.');
     const previous=this.waiting.get(uid);
-    if(previous){if(previous.peer.id!==peer.id)return fail('This account is already searching on another connection.');this.send(previous);return ok();}
+    if(previous){if(previous.peer.id!==peer.id)return fail('This account is already searching on another connection.');if(previous.ranked)return fail('Cancel the ranked search first.');this.send(previous);return ok();}
     if(!this.available())return fail('Public play is temporarily unavailable. Try again later; private rooms remain available.');
     if(this.waiting.size>=256)return fail('Queue is at capacity.');
     const entry:Entry={peer,mode,accumulated:0,since:this.clock()};this.waiting.set(uid,entry);this.send(entry);this.pair();return ok();
+  }
+  joinRanked(peer:QueuePeer,profile:RankedProfile):ActionReply {
+    if(profile.level<RANKED.level)return fail(`Ranked unlocks at level ${RANKED.level}. You're level ${profile.level}: play Quick Play to level up.`);
+    const uid=peer.identity.userId;
+    if(this.seats.has(uid))return fail('Leave your current match first.');
+    const previous=this.waiting.get(uid);
+    if(previous){if(previous.peer.id!==peer.id)return fail('This account is already searching on another connection.');if(!previous.ranked)return fail('Cancel the Quick Play search first.');this.send(previous);return ok();}
+    if(!this.available())return fail('Ranked is temporarily unavailable. Try again later.');
+    if(this.waiting.size>=256)return fail('Queue is at capacity.');
+    const entry:Entry={peer,mode:RANKED.mode,accumulated:0,since:this.clock(),ranked:profile};this.waiting.set(uid,entry);this.send(entry);this.pair();return ok();
   }
   cancel(peer:QueuePeer):ActionReply {
     const entry=this.waiting.get(peer.identity.userId);
@@ -48,6 +61,7 @@ export class Matchmaking {
   bot(peer:QueuePeer):ActionReply {
     const entry=this.waiting.get(peer.identity.userId);
     if(!entry || entry.peer.id!==peer.id || entry.disconnectedAt!==undefined)return fail('You are no longer in the human queue.');
+    if(entry.ranked)return fail('Ranked has no AI opponent. Keep searching or cancel.');
     if(this.elapsed(entry)<BOT_WAIT_MS)return fail('The optional AI challenge unlocks after five minutes of connected search.');
     if(!this.available() || this.rooms.size>=100)return fail('Match capacity or result storage unavailable. Keep searching or cancel.');
     // No await between consuming the queue entry and reserving its AI room.
@@ -67,17 +81,27 @@ export class Matchmaking {
   tick() {this.expire(this.clock());this.pair();for(const entry of this.waiting.values())if(entry.disconnectedAt===undefined)this.send(entry);}
   private elapsed(entry:Entry){return entry.accumulated+(entry.disconnectedAt===undefined?Math.max(0,this.clock()-entry.since):0);}
   private idle():QueueState{return{state:'idle',elapsedMs:0,botEligible:false,serverTime:Date.now()};}
-  private send(entry:Entry){const elapsedMs=Math.floor(this.elapsed(entry));entry.peer.queue({state:entry.disconnectedAt===undefined?'searching':'reconnecting',elapsedMs,botEligible:entry.disconnectedAt===undefined&&elapsedMs>=BOT_WAIT_MS,mode:entry.mode,serverTime:Date.now()});}
+  private send(entry:Entry){const elapsedMs=Math.floor(this.elapsed(entry)),range=rankedWindow(elapsedMs);entry.peer.queue({state:entry.disconnectedAt===undefined?'searching':'reconnecting',elapsedMs,botEligible:!entry.ranked&&entry.disconnectedAt===undefined&&elapsedMs>=BOT_WAIT_MS,mode:entry.mode,...(entry.ranked?{ranked:true,range:Number.isFinite(range)?range:null}:{}),serverTime:Date.now()});}
   private pair(){
     if(!this.available())return;
     for(const entry of [...this.waiting.values()]){
       if(this.rooms.size>=100)return;
       if(!this.waiting.has(entry.peer.identity.userId)||entry.disconnectedAt!==undefined)continue;
-      const other=[...this.waiting.values()].find(e=>e!==entry&&e.mode===entry.mode&&e.disconnectedAt===undefined);
-      if(other)this.launch([entry,other],'public');
+      const other=entry.ranked?this.rankedOpponent(entry):[...this.waiting.values()].find(e=>e!==entry&&!e.ranked&&e.mode===entry.mode&&e.disconnectedAt===undefined);
+      if(other)this.launch([entry,other],entry.ranked?'ranked':'public');
     }
   }
-  private launch(entries:Entry[],kind:'public'|'ai'){
+  /** Closest-rated ranked player within either player's current range, never from the same network. */
+  private rankedOpponent(entry:Entry){
+    const me=entry.ranked!;let best:Entry|undefined;
+    for(const e of this.waiting.values()){
+      if(e===entry||!e.ranked||e.disconnectedAt!==undefined||(me.ip!==null&&me.ip===e.ranked.ip))continue;
+      const gap=Math.abs(me.points-e.ranked.points);
+      if(gap<=Math.max(rankedWindow(this.elapsed(entry)),rankedWindow(this.elapsed(e)))&&(!best||gap<Math.abs(me.points-best.ranked!.points)))best=e;
+    }
+    return best;
+  }
+  private launch(entries:Entry[],kind:'public'|'ai'|'ranked'){
     const room=this.makeRoom(kind);room.mode=entries[0].mode;
     for(const entry of entries){
       const peer=entry.peer,playerId=randomUUID();room.add(playerId,peer.identity);
@@ -88,7 +112,7 @@ export class Matchmaking {
     for(const entry of entries){entry.peer.queue(this.idle());const seat=this.seats.get(entry.peer.identity.userId)!;entry.peer.attach(room,seat.playerId);}
   }
   private expire(now:number){
-    for(const room of this.roomTimes.keys())if(room.kind==='public'){
+    for(const room of this.roomTimes.keys())if(room.kind!=='ai'){
       const seats=[...this.seats.values()].filter(s=>s.room===room);
       if(seats.length===2 && seats.every(s=>s.disconnectedAt!==undefined && now-s.disconnectedAt>=RECONNECT_MS))room.cancel('Both players disconnected. Match cancelled.');
     }

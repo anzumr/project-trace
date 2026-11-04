@@ -4,7 +4,7 @@ krazer.io (repo name Project Trace): a first-person 1v1 mouse-tracking duel game
 
 ## Layout
 
-- `packages/shared/src`: code both sides run. Physics `move()`, crouch helpers `stance`/`eyeHeight` and `CONFIG` in `index.ts`; character `modes.ts`; network `protocol.ts` (`validateInput`); `practice.ts` (practice bot, hitboxes); `combat.ts` (stats).
+- `packages/shared/src`: code both sides run. Physics `move()`, crouch helpers `stance`/`eyeHeight` and `CONFIG` in `index.ts`; character `modes.ts`; network `protocol.ts` (`validateInput`); `practice.ts` (practice bot, hitboxes); `combat.ts` (stats); `ranked.ts` (tiers, rank points, queue ranges; mirrored in SQL by `trace_private.rank_step`).
 - `apps/server/src`: `game/Room.ts` (authoritative tick, hit tests, lag-compensation `rewind`), `game/ExtraHardAI.ts`, `server.ts`, `net/http.ts` (static serving, CSP, file-type allow list), results/outbox, Supabase auth.
 - `apps/client/src`:
   - `main.tsx`: screen routing.
@@ -12,7 +12,7 @@ krazer.io (repo name Project Trace): a first-person 1v1 mouse-tracking duel game
   - `net/Network.ts`.
   - `ui/`: `TopBar`, `HomeScreen`, `PlayScreen`, `RoomScreen`, `QuickPlay` (queue), `SettingsPanel`, `CombatHud`, `CareerScreen` (match history), `settings.ts` including keybinds and game sensitivity matching.
   - `auth/`: `AccountPanel`, `ProgressPanel`, `useProgress`, `client.ts`.
-- `supabase/migrations`: SQL, applied **by hand, once, in order** in the Supabase SQL editor. All six are applied to the live project.
+- `supabase/migrations`: SQL, applied **by hand, once, in order** in the Supabase SQL editor. All seven are applied to the live project.
 - `scripts/`: `dev.mjs`, the production smoke test and the two-browser acceptance test (`browser-matchmaking.ts`).
 
 ## Commands (Windows: use `npm.cmd` in PowerShell)

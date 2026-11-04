@@ -1,0 +1,19 @@
+.rank-emblem{display:inline-block;flex:none}.rank-emblem svg{display:block;width:100%;height:100%}
+.rank-summary{display:flex;align-items:center;gap:16px;min-width:0}.rank-summary>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.rank-summary strong{font:italic 800 26px/1 var(--display);text-transform:uppercase;letter-spacing:.5px}
+.rank-rp{font-size:13px;color:var(--text-2);font-variant-numeric:tabular-nums}
+.rank-bar{display:block;width:180px;max-width:100%;height:6px;background:#1a212b}.rank-bar i{display:block;height:100%;background:var(--accent)}
+.rank-summary small{font-size:12px;letter-spacing:1px;color:var(--faint)}
+.ranked-panel{display:grid;grid-template-columns:minmax(0,1.3fr) auto minmax(240px,.8fr);align-items:center;gap:24px 32px;margin-top:24px;padding:24px 28px;background:linear-gradient(100deg,#1a0d12,var(--panel) 60%);border:2px solid var(--accent)}
+.ranked-copy h2{margin:6px 0 8px;font:italic 800 34px/1 var(--display);text-transform:uppercase;letter-spacing:.5px}.ranked-copy p:not(.eyebrow){margin:0;font-size:14px;line-height:1.5;color:var(--text-2);max-width:56ch}
+.ranked-action{display:flex;flex-direction:column;gap:8px}
+.ranked-lock{margin:0;padding:14px 16px;border:1px solid var(--line-2);background:var(--bg);font-size:14px;color:var(--text-2)}.ranked-lock strong{display:block;margin-bottom:2px;font:700 16px var(--display);color:var(--text);text-transform:uppercase}
+.rank-change{display:flex;align-items:center;justify-content:center;gap:16px;margin:14px auto 4px;padding:12px 18px;border:1px solid var(--line-2);background:var(--panel);text-align:left}
+.rank-change p{margin:0;color:var(--muted);font-size:14px}
+.rank-change>div{display:flex;flex-direction:column;gap:3px}
+.rank-delta{font:italic 800 30px/1 var(--display);font-variant-numeric:tabular-nums}.rank-change.up .rank-delta{color:#3ddc97}.rank-change.down .rank-delta{color:#ff3b47}
+.rank-change strong{font:700 15px var(--display);text-transform:uppercase;letter-spacing:.5px}.rank-change small{font-size:12px;color:var(--muted)}
+.rank-cell{display:flex;align-items:center;gap:10px}
+.home-rank{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.home-rank .rank-summary strong{font-size:20px}
+@media (max-width:1100px){.ranked-panel{grid-template-columns:1fr auto}.ranked-action{grid-column:1/-1}}
+@media (max-width:640px){.ranked-panel{grid-template-columns:1fr}}

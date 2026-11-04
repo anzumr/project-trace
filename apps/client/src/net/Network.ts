@@ -75,6 +75,10 @@ export class Network {
     try { await this.connect(); const result = await this.socket.timeout(5000).emitWithAck('queueJoin',mode); if(!result.ok)throw new Error(result.error); this.rememberPublic(true); this.error(''); }
     catch(error){this.error(error instanceof Error ? error.message : 'Could not enter queue.');}
   }
+  async findRanked() {
+    try { await this.connect(); const result = await this.socket.timeout(10000).emitWithAck('rankedJoin'); if(!result.ok)throw new Error(result.error); this.rememberPublic(true); this.error(''); }
+    catch(error){this.error(error instanceof Error ? error.message : 'Could not enter the ranked queue.');}
+  }
   async cancelQueue() {
     if(!this.socket.connected){this.cancelPending=true;this.error('Cancellation will be sent when reconnected; disconnected queue entries expire after 20 seconds.');return;}
     try {const result:ActionReply=await this.socket.timeout(5000).emitWithAck('queueCancel');if(!result.ok)throw new Error(result.error);this.rememberPublic(false);this.error('');}

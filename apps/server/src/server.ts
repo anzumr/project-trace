@@ -11,20 +11,23 @@ import { resolve } from 'node:path';
 import { ResultOutbox, providerResultSink, type ResultSink } from './ResultOutbox';
 import { Matchmaking, type QueuePeer } from './Matchmaking';
 import { verifyIdentity, type VerifyIdentity, type Identity } from './auth';
+import { clientNetwork, providerRankLookup, type RankLookup } from './ranks';
+import type { MatchKind } from './game/Results';
 
-export function createGameServer(options: { serveClient?: boolean; verifyIdentity?: VerifyIdentity; resultSink?: ResultSink; outboxDirectory?: string; queueClock?: () => number } = {}) {
+export function createGameServer(options: { serveClient?: boolean; verifyIdentity?: VerifyIdentity; resultSink?: ResultSink; outboxDirectory?: string; queueClock?: () => number; rankLookup?: RankLookup | null } = {}) {
   const http = createServer((req, res) => { void serveHttp(req,res,!!options.serveClient).catch(()=>{if(!res.headersSent)res.writeHead(500);res.end();}); });
   const allowed = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3001,http://127.0.0.1:3001').split(',').map(s => s.trim());
   const io = new Server<ClientEvents, ServerEvents>(http, { maxHttpBufferSize: 4096, cors: { origin: allowed }, allowRequest: (req, done) => done(null, !req.headers.origin || allowed.includes(req.headers.origin)) });
   const rooms = new Map<string, Room>();
   const outbox = new ResultOutbox(options.outboxDirectory ?? resolve('.trace-data/outbox'), options.resultSink ?? providerResultSink());
-  const makeRoom = (kind: 'private' | 'public' | 'ai' = 'private') => {
+  const makeRoom = (kind: MatchKind = 'private') => {
     let code: string; do { code = Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[randomInt(32)]).join(''); } while (rooms.has(code));
     return new Room(code, { kind, onResult: (result, room) => outbox.enqueue(result, state => { if(room.matchId===result.id)room.resultState = state; }) });
   };
   const matchmaking = new Matchmaking(rooms, makeRoom, () => outbox.available, options.queueClock);
   const occupied = (uid: string) => [...rooms.values()].some(r => [...r.players.values()].some(p => p.accountId === uid && p.state.connected !== false));
   const verify = options.verifyIdentity ?? verifyIdentity;
+  const rankLookup = options.rankLookup === null ? undefined : options.rankLookup ?? providerRankLookup();
   const authAttempts = new Map<string, { bucket: TokenBucket; used: number }>();
   let verifying = 0;
   io.use(async (socket, next) => {
@@ -102,6 +105,18 @@ export function createGameServer(options: { serveClient?: boolean; verifyIdentit
       if (!peer) { reply({ ok: false, error: 'Sign in and claim a username for public play.' }); return; }
       if (room || occupied(peer.identity.userId)) { reply({ ok: false, error: 'Leave your current room first.' }); return; }
       reply(matchmaking.join(peer, mode));
+    });
+    const network = clientNetwork(socket.handshake.headers), rankedRate = new TokenBucket(1 / 5, 3, performance.now());
+    socket.on('rankedJoin', async reply => {
+      if (typeof reply !== 'function') return;
+      if (!peer) { reply({ ok: false, error: 'Sign in and claim a username to play ranked.' }); return; }
+      if (room || occupied(peer.identity.userId)) { reply({ ok: false, error: 'Leave your current room first.' }); return; }
+      if (!rankLookup) { reply({ ok: false, error: 'Ranked is unavailable on this server.' }); return; }
+      if (!rankedRate.take(performance.now())) { reply({ ok: false, error: 'Please wait a moment before trying again.' }); return; }
+      let profile: Awaited<ReturnType<RankLookup>>;
+      try { profile = await rankLookup(peer.identity.userId); } catch { reply({ ok: false, error: 'Could not load your rank. Try again shortly.' }); return; }
+      if (!socket.connected || room) { reply({ ok: false, error: 'Connection changed. Try again.' }); return; }
+      reply(matchmaking.joinRanked(peer, { ...profile, ip: network }));
     });
     socket.on('queueCancel', reply => { if (typeof reply === 'function') reply(peer ? matchmaking.cancel(peer) : { ok: true }); });
     socket.on('queueBot', reply => { if (typeof reply === 'function') reply(peer ? matchmaking.bot(peer) : { ok: false, error: 'Sign in first.' }); });

@@ -2,6 +2,7 @@ import type { useAccount } from '../auth/useAccount';
 import { accuracyOf, ago, kindLabel, type Progress } from '../auth/useProgress';
 import { Arrow, Chevron, Mouse } from './icons';
 import { defaults, keyLabel, type Keybinds } from './settings';
+import { RankSummary } from './Ranked';
 
 export const Controls = ({ keys = defaults.keys }: { keys?: Keybinds }) => <div className="controls-row"><span><kbd>{[keys.forward, keys.left, keys.back, keys.right].map(keyLabel).join(' ')}</kbd>Move</span><span><kbd>{keyLabel(keys.jump)}</kbd>Jump</span><span><kbd>{keyLabel(keys.crouch)}</kbd>Crouch</span><span><kbd>HOLD MOUSE 1</kbd>Fire</span><span><kbd>ESC</kbd>Menu</span></div>;
 
@@ -17,6 +18,7 @@ function ProgressCard({ account, progress: p, openAccount, career }: { account: 
         <div className="level-row"><strong>LVL {p.level}</strong><span>{p.xp - p.start} / {p.next - p.start} XP</span></div>
         <div className="xp-bar" role="progressbar" aria-label="Level progress" aria-valuemin={0} aria-valuemax={p.next - p.start} aria-valuenow={p.xp - p.start}><i style={{ width: `${100 * (p.xp - p.start) / Math.max(1, p.next - p.start)}%` }}/></div>
         <div className="stat-grid"><div><span>MATCHES</span><b>{count}</b></div><div><span>WIN RATE</span><b>{count ? `${Math.round(Number(s!.wins) / count * 100)}%` : '—'}</b></div><div><span>ACCURACY</span><b>{accuracyOf(p.combat.find(c => c.kind === 'public'))}</b></div></div>
+        {p.rank && p.rank.wins + p.rank.losses > 0 && <div className="home-rank"><RankSummary rank={p.rank} size={52}/></div>}
       </>}
     </section>
     <section className="card recent" aria-label="Recent matches"><h2 className="card-title">RECENT MATCHES</h2>

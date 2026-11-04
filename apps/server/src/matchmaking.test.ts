@@ -47,3 +47,17 @@ test('a human pairing wins over a late bot acceptance and simultaneous expired d
   queue.disconnect(a.p);queue.disconnect(b.p);advance(RECONNECT_MS);
   assert.equal(room.resultStatus,'cancelled');assert.equal(room.winner,null);assert.equal(rooms.size,0);
 });
+test('ranked needs level 5, pairs the closest rank within a widening range, never the same network or an AI',()=>{
+  const {queue,rooms,peer,advance}=setup(),a=peer('A'),b=peer('B'),c=peer('C'),d=peer('D'),e=peer('E');
+  assert.match(queue.joinRanked(a.p,{points:500,level:4,ip:null}).error!,/level 5/);
+  assert.ok(queue.joinRanked(a.p,{points:500,level:5,ip:'1.1.1.1'}).ok);assert.equal(a.states.at(-1)?.ranked,true);assert.equal(a.states.at(-1)?.range,300);
+  assert.equal(queue.join(a.p,'standard').ok,false,'one queue at a time');assert.equal(queue.bot(a.p).ok,false);
+  queue.joinRanked(b.p,{points:2000,level:9,ip:'2.2.2.2'});assert.equal(rooms.size,0,'1500 RP apart is outside both ranges');
+  queue.joinRanked(c.p,{points:640,level:9,ip:'1.1.1.1'});assert.equal(rooms.size,0,'same network never pairs');
+  advance(30_000);assert.equal(a.states.at(-1)?.range,600);assert.equal(rooms.size,0);
+  queue.joinRanked(d.p,{points:700,level:9,ip:'3.3.3.3'});assert.equal(rooms.size,1,'A and D are 200 apart');
+  assert.equal(a.matches[0]?.kind,'ranked');assert.equal(a.matches[0],d.matches[0]);assert.equal(a.matches[0].mode,'standard');
+  queue.join(e.p,'standard');advance(59_000);assert.equal(e.matches.length,0,'Quick Play never pairs with ranked');
+  assert.equal(c.states.at(-1)?.range,1050);assert.equal(rooms.size,1,'B and C are 1360 apart');
+  advance(1_000);assert.equal(rooms.size,2,'after 90 s any rank is allowed');assert.equal(b.matches[0],c.matches[0]);
+});

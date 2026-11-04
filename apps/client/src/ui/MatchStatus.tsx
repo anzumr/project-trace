@@ -1,5 +1,6 @@
 import type { Snapshot } from '@trace/shared/protocol';
 import { CONFIG } from '@trace/shared';
+import { matchRules } from '@trace/shared/ranked';
 
 export function matchMessage(room: Snapshot) {
   if (room.paused) return 'Match paused · waiting for reconnection (20-second grace)';
@@ -15,7 +16,7 @@ export function MatchStatus({ room, locked }: { room: Snapshot; locked: boolean 
   const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   return <>
     {room.paused && <div className="network-warning" role="status">{matchMessage(room)}</div>}
-    <div className="match-score"><small>FIRST TO {CONFIG.winsRequired} · ROUND {room.round || 1}/{CONFIG.winsRequired * 2 - 1}</small><div>{room.players.map(p => <span key={p.id}><span className="score-name">{p.name}</span><b>{p.wins}</b></span>)}</div><strong>{room.phase === 'live' || room.phase === 'suddenDeath' ? clock : room.phase === 'countdown' ? `STARTS IN ${seconds}` : room.phase === 'roundEnd' ? `NEXT IN ${seconds}` : room.phase.toUpperCase()}</strong></div>
+    <div className="match-score"><small>FIRST TO {matchRules(room.kind).wins} · ROUND {room.round || 1}/{matchRules(room.kind).wins * 2 - 1}</small><div>{room.players.map(p => <span key={p.id}><span className="score-name">{p.name}</span><b>{p.wins}</b></span>)}</div><strong>{room.phase === 'live' || room.phase === 'suddenDeath' ? clock : room.phase === 'countdown' ? `STARTS IN ${seconds}` : room.phase === 'roundEnd' ? `NEXT IN ${seconds}` : room.phase.toUpperCase()}</strong></div>
     {locked && (room.phase !== 'live' || room.remaining > CONFIG.roundSeconds - 1) && <div className={`match-message ${room.phase}`}><strong>{room.phase === 'countdown' ? seconds : matchMessage(room)}</strong><span>{room.phase === 'roundEnd' ? room.reason : room.phase === 'countdown' ? `ROUND ${room.round} · GET READY` : room.phase === 'lobby' || room.phase === 'finished' ? 'Your mouse is captured. Waiting for opponent to ready.' : room.phase === 'suddenDeath' ? `${CONFIG.suddenDeathSeconds} seconds · simultaneous hits replay the round` : ''}</span></div>}
   </>;
 }
