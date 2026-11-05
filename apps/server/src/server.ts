@@ -10,11 +10,11 @@ import { TokenBucket } from './net/RateLimit';
 import { resolve } from 'node:path';
 import { ResultOutbox, providerResultSink, type ResultSink } from './ResultOutbox';
 import { Matchmaking, type QueuePeer } from './Matchmaking';
-import { verifyIdentity, type VerifyIdentity, type Identity } from './auth';
+import { verifyIdentity, accountOf, providerAccountDeleter, type VerifyIdentity, type Identity, type AccountOf, type DeleteAccount } from './auth';
 import { clientNetwork, providerRankLookup, type RankLookup } from './ranks';
 import type { MatchKind } from './game/Results';
 
-export function createGameServer(options: { serveClient?: boolean; verifyIdentity?: VerifyIdentity; resultSink?: ResultSink; outboxDirectory?: string; queueClock?: () => number; rankLookup?: RankLookup | null } = {}) {
+export function createGameServer(options: { serveClient?: boolean; verifyIdentity?: VerifyIdentity; resultSink?: ResultSink; outboxDirectory?: string; queueClock?: () => number; rankLookup?: RankLookup | null; accountOf?: AccountOf; deleteAccount?: DeleteAccount | null } = {}) {
   const http = createServer((req, res) => { void serveHttp(req,res,!!options.serveClient).catch(()=>{if(!res.headersSent)res.writeHead(500);res.end();}); });
   const allowed = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3001,http://127.0.0.1:3001').split(',').map(s => s.trim());
   const io = new Server<ClientEvents, ServerEvents>(http, { maxHttpBufferSize: 4096, cors: { origin: allowed }, allowRequest: (req, done) => done(null, !req.headers.origin || allowed.includes(req.headers.origin)) });
@@ -25,23 +25,31 @@ export function createGameServer(options: { serveClient?: boolean; verifyIdentit
     return new Room(code, { kind, onResult: (result, room) => outbox.enqueue(result, state => { if(room.matchId===result.id)room.resultState = state; }) });
   };
   const matchmaking = new Matchmaking(rooms, makeRoom, () => outbox.available, options.queueClock);
-  const occupied = (uid: string) => [...rooms.values()].some(r => [...r.players.values()].some(p => p.accountId === uid && p.state.connected !== false));
-  const verify = options.verifyIdentity ?? verifyIdentity;
+  // Deleted (or deleting) accounts still hold unexpired tokens; treating them as busy keeps them out of every room and queue.
+  const removed = new Set<string>();
+  const occupied = (uid: string) => removed.has(uid) || [...rooms.values()].some(r => [...r.players.values()].some(p => p.accountId === uid && p.state.connected !== false));
+  const verify = options.verifyIdentity ?? verifyIdentity, ownerOf = options.accountOf ?? accountOf;
+  const deleteAccount = options.deleteAccount === null ? undefined : options.deleteAccount ?? providerAccountDeleter();
   const rankLookup = options.rankLookup === null ? undefined : options.rankLookup ?? providerRankLookup();
   const authAttempts = new Map<string, { bucket: TokenBucket; used: number }>();
   let verifying = 0;
+  /** Per-address limit on Auth lookups, shared by sign-in and account deletion. Returns the refusal, if any. */
+  const throttled = (address: string) => {
+    const now = performance.now();
+    for (const [ip, entry] of authAttempts) if (now - entry.used > 60000) authAttempts.delete(ip);
+    if (verifying >= 32 || (authAttempts.size >= 4096 && !authAttempts.has(address))) return 'Account service busy. Try again shortly.';
+    const entry = authAttempts.get(address) ?? { bucket: new TokenBucket(0.5, 10, now), used: now };
+    entry.used = now; authAttempts.set(address, entry);
+    return entry.bucket.take(now) ? '' : 'Account requests are too frequent. Try again shortly.';
+  };
   io.use(async (socket, next) => {
     const token: unknown = socket.handshake.auth.token;
     if (token === undefined || token === null) { next(); return; }
     if (typeof token !== 'string' || !token || token.length > 8192) { next(new Error('Invalid account session.')); return; }
-    const now = performance.now(), address = socket.handshake.address;
-    for (const [ip, entry] of authAttempts) if (now - entry.used > 60000) authAttempts.delete(ip);
-    if (verifying >= 32 || io.engine.clientsCount > 256 || (authAttempts.size >= 4096 && !authAttempts.has(address))) { next(new Error('Account service busy. Try again shortly.')); return; }
-    const entry = authAttempts.get(address) ?? { bucket: new TokenBucket(0.5, 10, now), used: now };
-    entry.used = now; authAttempts.set(address, entry);
-    if (!entry.bucket.take(now)) { next(new Error('Account requests are too frequent. Try again shortly.')); return; }
+    const refusal = io.engine.clientsCount > 256 ? 'Account service busy. Try again shortly.' : throttled(socket.handshake.address);
+    if (refusal) { next(new Error(refusal)); return; }
     verifying++;
-    try { const identity = await verify(token); if (identity.expiresAt <= Date.now()) throw new Error('Expired'); socket.data.identity = identity; next(); }
+    try { const identity = await verify(token); if (identity.expiresAt <= Date.now() || removed.has(identity.userId)) throw new Error('Expired'); socket.data.identity = identity; next(); }
     catch { next(new Error('Account verification failed. Sign in, claim your username, and check server configuration.')); }
     finally { verifying--; }
   });
@@ -73,6 +81,22 @@ export function createGameServer(options: { serveClient?: boolean; verifyIdentit
       finally { refreshing = false; }
     });
     socket.on('disconnect', () => clearTimeout(expiration));
+    const deleteRate = new TokenBucket(1 / 30, 2, performance.now());
+    socket.on('deleteAccount', async (token, reply) => {
+      if (typeof reply !== 'function') return;
+      if (!deleteAccount) { reply({ ok: false, error: 'Account deletion is unavailable on this server.' }); return; }
+      if (typeof token !== 'string' || !token || token.length > 8192) { reply({ ok: false, error: 'Sign in again, then retry.' }); return; }
+      const refusal = deleteRate.take(performance.now()) ? throttled(socket.handshake.address) : 'Please wait a moment before trying again.';
+      if (refusal) { reply({ ok: false, error: refusal }); return; }
+      let userId: string;
+      verifying++;
+      try { userId = await ownerOf(token); } catch { reply({ ok: false, error: 'Your session could not be verified. Sign in again, then retry.' }); return; } finally { verifying--; }
+      if (occupied(userId) || matchmaking.hasActivity(userId) || outbox.holds(userId)) { reply({ ok: false, error: 'Leave your match or queue first. If a match just ended, wait a moment for its result to save.' }); return; }
+      removed.add(userId);
+      try { await deleteAccount(userId); } catch { removed.delete(userId); reply({ ok: false, error: 'Your account could not be deleted. Try again shortly.' }); return; }
+      reply({ ok: true });
+      for (const other of io.sockets.sockets.values()) if ((other.data.identity as Identity | undefined)?.userId === userId) { other.emit('notice', 'This account was deleted.'); other.disconnect(true); }
+    });
     let lastAction = -Infinity;
     const leave = () => { if (peer) matchmaking.leave(peer); if (!room) return; const old = room; socket.leave(old.code); if (old.kind === 'private') old.remove(playerId); if (!old.players.size) rooms.delete(old.code); else io.to(old.code).emit('snapshot', old.snapshot()); room = undefined; playerId = socket.id; };
     const limited = (reply: (result: RoomReply) => void) => { const now = performance.now(); if (now - lastAction < 500) { reply({ ok: false, error: 'Please wait a moment before trying again.' }); return true; } lastAction = now; return false; };

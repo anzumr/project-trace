@@ -16,6 +16,8 @@ export interface ClientEvents {
   queueCancel: (reply: (result: ActionReply) => void) => void;
   queueBot: (reply: (result: ActionReply) => void) => void;
   authenticate: (token: string, reply: (ok: boolean) => void) => void;
+  /** Permanently deletes the token's account. Refused while that account is queued, playing or has a result still saving. */
+  deleteAccount: (token: string, reply: (result: ActionReply) => void) => void;
   create: (reply: (result: RoomReply) => void) => void;
   join: (code: string, reply: (result: RoomReply) => void) => void;
   ready: (modeRevision: number) => void;

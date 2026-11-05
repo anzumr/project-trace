@@ -107,6 +107,12 @@ The single tabbed menu panel became dedicated screens, designed first on a canva
 - `index.html` has a longer title and description, a canonical link to `https://krazer.io/`, Open Graph and Twitter tags for link previews (using the wordmark), and `WebSite` JSON-LD naming the site "krazer.io". JSON-LD is a data block, so the `script-src 'self'` CSP doesn't block it (checked in the production build: no console errors).
 - Google Search Console isn't set up yet. That's the user's step: verify `krazer.io` and submit the sitemap.
 
+### 14. Delete your account (4 Nov 2026)
+- Account page → "Delete account" opens a confirmation: type your username (or `DELETE` if no username was claimed), then "DELETE ACCOUNT". On success the browser signs out and shows "Your account and its data were deleted."
+- The client (`auth/deleteAccount.ts`) opens a separate guest socket and sends `deleteAccount(token)`. The server checks the token with Auth (`accountOf`, no username needed), then refuses while that account is in a room or queue, or has a result still in the outbox: an unsaved result for a deleted account would be rejected forever and block every result behind it. It then calls `auth.admin.deleteUser` with `SUPABASE_SECRET_KEY` and disconnects the account's other sockets. Deleted accounts are kept in an in-memory set, so their still-valid tokens can't reconnect or join anything until the server restarts, by which point Auth rejects them.
+- Migration `202611040002_account_deletion.sql` adds a `before delete` trigger on `profiles`. Deleting the Auth user cascades to profile, XP, stats, combat totals, rank, rank history and friends. Opponents keep the match, but the trigger renames the player to "Deleted player" in `match_participants`, in the saved rounds in `match_combat`, and in the private result receipts (the user ID is removed there too). The username is released. Deleting a user from the Supabase dashboard runs the same trigger. Covered on PGlite in `apps/server/src/account-deletion.test.ts`. **Not applied yet: apply it in Supabase before deploying this server.**
+- The privacy policy now describes in-game deletion (email still works too).
+
 ## External setup done (outside the repo)
 
 - **Supabase**
@@ -136,7 +142,7 @@ The single tabbed menu panel became dedicated screens, designed first on a canva
   - A live load test saves one guest result per fake match when the bots leave (names `loadtest-…`); delete those rows afterwards (receipts first, then `match_results`).
   - The local result outbox is lost on restart.
   - Starter (about $7/month) fixes sleep and gives 5× the CPU. An Oracle free VM was discussed as an alternative.
-- **Usernames are permanent.** Any rename now requires a database owner editing `public.profiles` by hand.
+- **Usernames are permanent.** Any rename now requires a database owner editing `public.profiles` by hand. Deleting an account releases its username.
 - `docs/performance*.json` and the older phase docs weren't refreshed for these features. The client main chunk still triggers Vite's >500 kB warning.
 - `.claude/launch.json` is an untracked local preview config used by Claude Code. Ignore or delete it.
 

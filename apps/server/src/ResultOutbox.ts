@@ -22,6 +22,8 @@ export class ResultOutbox {
   readonly ready: Promise<void>;
   healthy = true;
   get available() { return !!this.sink && this.healthy && this.pending.size < 1000; }
+  /** An unsaved result for a deleted account would be rejected forever and block every result queued behind it. */
+  holds(userId: string) { return [...this.pending.values()].some(({ result }) => result.players.some(p => p.userId === userId)); }
   constructor(private directory: string, private sink?: ResultSink) {
     this.ready = this.restore().catch(()=>{this.healthy=false;console.error('Result outbox could not load. Public queue disabled.');});
     this.timer=setInterval(()=>void this.flush(),5000); this.timer.unref();

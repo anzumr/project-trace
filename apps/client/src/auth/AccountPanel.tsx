@@ -1,6 +1,7 @@
 import { ProgressPanel } from './ProgressPanel';
 import { useEffect, useState, type FormEvent } from 'react';
 import { supabase, usernameValid, authRedirectFailed, suggestUsername, googleEnabled, authErrorMessage } from './client';
+import { deleteAccount } from './deleteAccount';
 import type { useAccount } from './useAccount';
 import type { Progress } from './useProgress';
 
@@ -13,6 +14,7 @@ export function AccountPanel({ account, inRoom, progress }: { account: ReturnTyp
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
   const { session, profile, recovery } = account;
   const [googleOn, setGoogleOn] = useState(false), [resendFor, setResendFor] = useState('');
+  const [confirm, setConfirm] = useState<string | null>(null), confirmWord = profile?.username_display ?? 'DELETE';
   useEffect(() => { let alive = true; void googleEnabled().then(on => { if (alive) setGoogleOn(on); }); return () => { alive = false; }; }, []);
   const meta = session?.user.user_metadata, googleUser = session?.user.app_metadata.provider === 'google';
   const suggested = String(meta?.desired_username || suggestUsername(meta?.full_name ?? meta?.name));
@@ -28,6 +30,16 @@ export function AccountPanel({ account, inRoom, progress }: { account: ReturnTyp
     setBusy(true); setError(''); setMessage('');
     const { error } = await supabase.auth.resend({ type: 'signup', email: resendFor, options: { emailRedirectTo: location.origin + '/' } });
     if (error) setError(authErrorMessage(error, 'resend')); else setMessage(`Confirmation email sent to ${resendFor}. Check spam if it doesn’t arrive.`);
+    setBusy(false);
+  };
+  const remove = async (e: FormEvent) => {
+    e.preventDefault(); if (!supabase || busy || inRoom || confirm?.trim().toLowerCase() !== confirmWord.toLowerCase()) return;
+    setBusy(true); setError(''); setMessage('');
+    // getSession refreshes an expired access token, so the server sees a live one.
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    const result = token ? await deleteAccount(token) : { ok: false, error: 'Your session expired. Sign in again, then retry.' };
+    if (result.ok) { await supabase.auth.signOut({ scope: 'local' }); setConfirm(null); setMessage('Your account and its data were deleted.'); }
+    else setError(result.error || 'Your account could not be deleted. Try again shortly.');
     setBusy(false);
   };
   const submit = async (e: FormEvent) => {
@@ -87,6 +99,13 @@ export function AccountPanel({ account, inRoom, progress }: { account: ReturnTyp
     </form>}
     {session && <button className="link-button" style={{ marginTop: 12 }} disabled={busy || inRoom} onClick={() => { setBusy(true); void supabase!.auth.signOut({ scope: 'local' }).then(({ error }) => { setBusy(false); if (error) setError('Sign-out failed. Check your connection and retry.'); }); }}>Sign out of this browser</button>}
     {profile && <p className="note">Input and graphics settings remain saved on this browser.</p>}
+    {session && !recovery && (confirm === null ? <button className="link-button danger-link" disabled={busy || inRoom} onClick={() => { setConfirm(''); setMessage(''); setError(''); }}>Delete account</button>
+      : <form className="delete-account" onSubmit={e => void remove(e)}><fieldset disabled={busy || inRoom}>
+        <h2>Delete your account</h2>
+        <p className="note">This permanently deletes your account, username, XP, rank, stats and friends. It can’t be undone. Your username becomes free for anyone to claim, and opponents’ match history will show you as “Deleted player”.</p>
+        <label>Type <strong>{confirmWord}</strong> to confirm<input className="text-input" autoComplete="off" spellCheck={false} value={confirm} onChange={e => setConfirm(e.target.value)}/></label>
+        <div className="delete-actions"><button className="btn-danger" disabled={confirm.trim().toLowerCase() !== confirmWord.toLowerCase()}>{busy ? 'DELETING…' : 'DELETE ACCOUNT'}</button><button type="button" className="link-button" onClick={() => setConfirm(null)}>Cancel</button></div>
+      </fieldset></form>)}
     {!session && <p className="note">You can also play private rooms as a guest. Guest matches do not earn persistent progress.</p>}
     {!session && <p className="note">By creating an account you agree to the <a href="/terms.html">Terms of Service</a> and <a href="/privacy.html">Privacy Policy</a>.</p>}
     </>}

@@ -47,7 +47,7 @@ try{
     console.log('Live mode: temporary QA accounts authenticated and usernames claimed. Credentials are kept in memory.');
   }else{
   await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key,email_confirmed_at timestamptz);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;`);
-  for(const name of ['202610270001_accounts.sql','202610280001_match_results.sql','202610310001_combat_stats.sql','202611010001_permanent_usernames.sql','202611020001_social_leaderboards.sql','202611030001_match_history.sql','202611040001_ranked.sql'])await db.exec(await readFile(resolve('supabase/migrations',name),'utf8'));
+  for(const name of ['202610270001_accounts.sql','202610280001_match_results.sql','202610310001_combat_stats.sql','202611010001_permanent_usernames.sql','202611020001_social_leaderboards.sql','202611030001_match_history.sql','202611040001_ranked.sql','202611040002_account_deletion.sql'])await db.exec(await readFile(resolve('supabase/migrations',name),'utf8'));
   for(let i=0;i<2;i++){await db.query('insert into auth.users values($1,now())',[ids[i]]);await db.query('insert into public.profiles(user_id,username_display) values($1,$2)',[ids[i],names[i]]);}
   }
   process.env.ALLOWED_ORIGINS='http://127.0.0.1:4187';
