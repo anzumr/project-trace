@@ -21,6 +21,7 @@ krazer.io (repo name Project Trace): a first-person 1v1 mouse-tracking duel game
 - `npm.cmd run typecheck`, `npm.cmd test`: run both before every commit.
 - `npm.cmd run build`, then `npm.cmd run test:production`: production build and smoke test.
 - `npm.cmd run test:browser`: two-Chrome end-to-end run. Slow, occasionally flaky; see the handoff.
+- `npm.cmd run test:load`: ramps fake players against an isolated local server (no database writes). `-- --url https://krazer.io` tests the live site: it slows real games and saves guest `loadtest-…` results, so ask first.
 
 ## Conventions
 

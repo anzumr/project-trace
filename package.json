@@ -16,6 +16,7 @@
     "benchmark": "node --import tsx scripts/benchmark.ts",
     "test:production": "node --import tsx scripts/production-smoke.ts",
     "test:browser": "node --import tsx scripts/browser-matchmaking.ts",
+    "test:load": "node --import tsx scripts/load-test.ts",
     "benchmark:addon": "node --import tsx scripts/addon-benchmark.ts",
     "check:persistence": "node --import tsx scripts/check-persistence.ts"
   },

@@ -125,7 +125,9 @@ The single tabbed menu panel became dedicated screens, designed first on a canva
 - **Google's consent screen shows the Supabase domain.** Showing krazer.io needs Supabase's paid custom domain.
 - **Render free plan limits:**
   - It sleeps after about 15 minutes (the "waking up" page).
-  - It has 0.1 CPU, which limits concurrent matches (a rough guess of 5–15).
+  - It has 0.1 CPU. Measured on 4 Nov 2026 with `npm.cmd run test:load -- --url https://krazer.io`: smooth at 10 players (5 matches); 20 players (10 matches) stay at 60 ticks/s but snapshots sometimes arrive 200 ms apart; at 30 players the server skips ticks (0.6 s lost per 15 s) and ping p95 reaches ~250 ms.
+  - The same server on a desktop handled the 100-room / 200-player cap at 60 ticks/s using ~48% of one core (~0.25% per player). Starter's 5× CPU should give roughly 100 smooth players (estimate, not measured).
+  - A live load test saves one guest result per fake match when the bots leave (names `loadtest-…`); delete those rows afterwards (receipts first, then `match_results`).
   - The local result outbox is lost on restart.
   - Starter (about $7/month) fixes sleep and gives 5× the CPU. An Oracle free VM was discussed as an alternative.
 - **Usernames are permanent.** Any rename now requires a database owner editing `public.profiles` by hand.
