@@ -101,6 +101,12 @@ The single tabbed menu panel became dedicated screens, designed first on a canva
 - Client: `RankEmblem.tsx` (all 32 emblems as SVG), `Ranked.tsx` (Play screen panel, rank-change card on final results), ranked leaderboard, Career filter and RP per match, rank on the home card.
 - `202611030001_match_history.sql` was committed empty in `b6994d3` (the live function was applied from the original text); its content is restored here.
 
+### 13. Search engine basics (4 Nov 2026)
+- Before this, `/robots.txt` and `/sitemap.xml` returned 404 (the server only serves extensions in the `types` map in `http.ts`; `.txt` and `.xml` are now on it).
+- `apps/client/public/robots.txt` allows everything and points to `sitemap.xml` (home, privacy, terms).
+- `index.html` has a longer title and description, a canonical link to `https://krazer.io/`, Open Graph and Twitter tags for link previews (using the wordmark), and `WebSite` JSON-LD naming the site "krazer.io". JSON-LD is a data block, so the `script-src 'self'` CSP doesn't block it (checked in the production build: no console errors).
+- Google Search Console isn't set up yet. That's the user's step: verify `krazer.io` and submit the sitemap.
+
 ## External setup done (outside the repo)
 
 - **Supabase**

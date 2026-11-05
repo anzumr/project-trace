@@ -12,10 +12,11 @@ try{
     const sound=await fetch(base+'/audio/'+name+'.ogg');assert.equal(sound.status,200);assert.equal(sound.headers.get('content-type'),'audio/ogg');
     assert.equal(Buffer.from(await sound.arrayBuffer()).subarray(0,4).toString(),'OggS');
   }
-  for(const [path,type] of [['/brand/krazer-wordmark.webp','image/webp'],['/brand/krazer-icon.png','image/png'],['/brand/favicon-64.png','image/png'],['/privacy.html','text/html; charset=utf-8'],['/terms.html','text/html; charset=utf-8']]){const image=await fetch(base+path);assert.equal(image.status,200);assert.equal(image.headers.get('content-type'),type);}
+  for(const [path,type] of [['/brand/krazer-wordmark.webp','image/webp'],['/brand/krazer-icon.png','image/png'],['/brand/favicon-64.png','image/png'],['/privacy.html','text/html; charset=utf-8'],['/terms.html','text/html; charset=utf-8'],['/robots.txt','text/plain; charset=utf-8'],['/sitemap.xml','application/xml; charset=utf-8']]){const image=await fetch(base+path);assert.equal(image.status,200);assert.equal(image.headers.get('content-type'),type);}
+  assert.match(await (await fetch(base+'/robots.txt')).text(),/Sitemap: https:\/\/krazer\.io\/sitemap\.xml/);assert.match(html,/rel="canonical" href="https:\/\/krazer\.io\/"/);
   for(const path of ['/package.json','/../package.json','/%2e%2e%2fpackage.json','/.env','/assets/not-found.js'])assert.equal((await fetch(base+path)).status,404);
   assert.equal((await fetch(base,{method:'POST'})).status,405);
   for(let i=0;i<2;i++){const socket=io(base,{transports:['websocket'],reconnection:false,extraHeaders:{Origin:'http://localhost:3001'}});sockets.push(socket);await new Promise<void>((resolve,reject)=>{socket.once('connect',resolve);socket.once('connect_error',reject);});}
   const created=await sockets[0].timeout(2000).emitWithAck('create');const joined=await sockets[1].timeout(2000).emitWithAck('join',created.snapshot.code);assert.equal(joined.ok,true);assert.equal(joined.snapshot.players.length,2);
-  console.log('PASS: production HTML, brand images, four OGG assets, compressed assets, CSP, traversal/method guards and two WebSocket clients.');
+  console.log('PASS: production HTML, robots and sitemap, brand images, four OGG assets, compressed assets, CSP, traversal/method guards and two WebSocket clients.');
 }finally{sockets.forEach(s=>s.disconnect());await server.close();}
