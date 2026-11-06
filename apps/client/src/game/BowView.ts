@@ -96,14 +96,18 @@ export class BowView {
     const grip = new THREE.Vector3(0.06 + Math.sin(t * 1.3) * 0.003, -0.29 + 0.016 * e + 0.014 * this.kick + Math.sin(t * 2.1) * 0.002, -0.47 - 0.02 * e - 0.03 * this.kick);
     const forward = new THREE.Vector3(0, 0, -30).sub(grip).normalize(), along = new THREE.Vector3(1, 0.2 - 0.05 * e + 0.08 * this.kick, 0).normalize();
     const { tA, tB, mid } = placeBow(this.bow, grip, forward, along, e + 0.12 * vib, null, 0.55, 0.0014);
-    const shelf = grip.clone().addScaledVector(along, 0.03), rest = shelf.clone().addScaledVector(forward, -0.105);
+    // The arrow rests on the riser's centre line (its upward face) and slides straight through the middle of the bow;
+    // the fist holds the handle just below the rest, towards the lower limb (left on screen).
+    const limb = along.clone().addScaledVector(forward, -along.dot(forward)).normalize(), up = new THREE.Vector3().crossVectors(limb, forward).normalize();
+    if (up.y < 0) up.negate();
+    const shelf = grip.clone().addScaledVector(up, 0.012), rest = shelf.clone().addScaledVector(forward, -0.105);
     const nock = (loaded ? shelf.clone().addScaledVector(forward, -0.105 - 0.5 * e) : mid.clone()).addScaledVector(forward, 0.025 * vib);
     segment(this.bow.strings[0], tA, nock, 0.0014); segment(this.bow.strings[1], tB, nock, 0.0014);
     const slide = Math.max(0, Math.min(1, this.reload / 0.28));
     this.nocked.visible = this.reload < 0.28; this.nocked.scale.setScalar(0.75);
     this.nocked.position.copy(loaded ? nock : rest).add(new THREE.Vector3(0, -0.1 * slide, 0.04 * slide)); this.nocked.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward);
-    this.hand.position.copy(grip); this.hand.scale.set(0.026, 0.034, 0.028);
-    this.wrist.position.copy(grip).add(new THREE.Vector3(-0.026, -0.034, 0.03)); this.wrist.scale.setScalar(0.019);
+    this.hand.position.copy(grip).addScaledVector(limb, -0.045); this.hand.scale.set(0.026, 0.03, 0.028);
+    this.wrist.position.copy(this.hand.position).add(new THREE.Vector3(-0.022, -0.03, 0.035)); this.wrist.scale.setScalar(0.019);
     segment(this.forearm, this.wrist.position, new THREE.Vector3(-0.24, -0.56, -0.1), 0.019);
     this.bow.accent.emissiveIntensity = 0.25 + 1.6 * e;
     this.camera.updateMatrixWorld(); this.shelf.copy(shelf).applyMatrix4(this.camera.matrixWorld);
