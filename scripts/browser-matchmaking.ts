@@ -182,8 +182,8 @@ try{
     assert.ok(saved.attack_ms>=saved.tracking_ms);assert.equal(saved.rounds.length,2);
   }
   const decoded=await a.evaluate(()=>{const e=(window as any).__traceEngine;return {buffers:e.audio.buffers.size,state:e.audio.context.state,events:(window as any).__audioEvents};});
-  assert.equal(decoded.buffers,4);assert.equal(decoded.state,'running');assert.equal(decoded.events.filter((e:any)=>e.kind==='kill').length,2);
-  console.log('PASS: four supplied OGG files decode in Chrome; authoritative round comparisons, persisted round stats and exactly two kill audio events.');
+  assert.equal(decoded.buffers,6);assert.equal(decoded.state,'running');assert.equal(decoded.events.filter((e:any)=>e.kind==='kill').length,2);
+  console.log('PASS: the four OGG and two bow MP3 sounds decode in Chrome; authoritative round comparisons, persisted round stats and exactly two kill audio events.');
   console.log('PASS: browser-driven human duel completes through authoritative damage; PostgreSQL records one result and 100/40 XP.');
   await a.getByRole('button',{name:'REMATCH',exact:true}).click();await a.getByRole('button',{name:'WAITING FOR OPPONENT…',exact:true}).waitFor();
   const firstMatch=room.matchId;

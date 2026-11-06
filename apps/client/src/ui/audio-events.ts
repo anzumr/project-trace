@@ -1,4 +1,5 @@
-export type Sound = 'hit'|'headshot'|'kill'|'spawn';
+/** Combat sounds come from counters below; `draw` and `release` are the Bow 1v1 bow, played directly. */
+export type Sound = 'hit'|'headshot'|'kill'|'spawn'|'draw'|'release';
 export type AudioCounters = { key:string; allowInitialSpawn?:boolean; spawn:number; kills:number; damage:number; headDamage:number };
 /** Cumulative counters survive packet coalescing; first observation never replays old kills. */
 export class AudioEvents {

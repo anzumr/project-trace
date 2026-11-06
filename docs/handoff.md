@@ -163,6 +163,11 @@ The single tabbed menu panel became dedicated screens, designed first on a canva
   - It strafes and hops. Normal and Hard air-jump sideways when you aim a strong draw at them.
   - Measured hit rates over 6 seeds × 40 s at about 12 m: standing target Easy 29%, Normal 70%, Hard 95%; strafing target 12%, 39%, 77%.
 - **UI:** the room screen shows "Bow practice" with chips instead of the mode picker, "START PRACTICE", and "PLAY AGAIN" at the end (which re-captures the mouse).
+- **Sound and footsteps (added 6 Nov):**
+  - Your bow plays `audio/bow-draw.mp3` (0.55 s, from the user) when a draw starts, cut off by a cancel, and `audio/bow-release.mp3` (1.87 s) on release, on their own lane in `CombatAudio`. They are MP3 because there is no converter on the dev machine; `.mp3` is on the server's file-type allow list and in the smoke test.
+  - Footsteps in every mode, including the roaming target in offline Practice: `ui/footsteps.ts` turns movement into steps (one per 2.31 m stride, matching the archer's legs; silent below 1.2 m/s; a landing thud after 0.25 s in the air; crouched steps at 35%; a respawn teleport is ignored; only 0.15 s without moving counts as stopping, because positions that update on ticks have still frames between them) and synthesizes six step and two landing variants (no audio files).
+  - Each opponent step plays through an HRTF `PannerNode` at their feet (inverse distance: full at 2.5 m, about a quarter at 10 m). The listener follows the camera, so you hear direction, including front and behind. Your own steps are quiet and centred. Footsteps follow master and SFX volume and Mute all; there is no separate toggle.
+  - `npm.cmd run test:bow` checks the sounds decode and play, that enemy steps are placed where the enemy is, and (with an offline render) that a step on the listener's right is louder in the right ear.
 - **Tests:** `apps/server/src/archer-bot.test.ts` (Hard kills a standing target; accuracy rises Easy < Normal < Hard; the bot leaves cover and shoots; Hard dodges with the air jump and Easy never does; the socket event is validated, the room is full and it is deleted on leave). `npm.cmd run test:bow` now also starts Hard practice and waits for the bot to shoot.
 
 ## External setup done (outside the repo)

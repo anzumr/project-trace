@@ -8,6 +8,7 @@ import type { PlayerInput, Snapshot, QueueState } from '@trace/shared/protocol';
 import { createBotModel } from './BotModel';
 import { ArcherModel, ARCHER_BODY } from './ArcherModel';
 import { BowView, type Anchor } from './BowView';
+import { StepTracker } from '../ui/footsteps';
 import { createArena } from './Arena';
 import { Network } from '../net/Network';
 import { TargetHealth } from './TargetHealth';
@@ -44,6 +45,10 @@ export class Engine {
   private bowHead = false;
   private deadAt: number | null = null;
   private wasBow = false;
+  /** Footsteps: yours (quiet, centred) and the opponent's (placed in 3D so you can hear where they are). */
+  private ownSteps = new StepTracker();
+  private enemySteps = new StepTracker();
+  private up = new THREE.Vector3();
   readonly network: Network;
   private pending: PlayerInput[] = [];
   private seq = 0;
@@ -197,8 +202,12 @@ export class Engine {
         if (!this.network.snapshot.paused && (this.network.snapshot.phase === 'live' || this.network.snapshot.phase === 'suddenDeath')) {
           const input = this.input(this.locked && this.network.snapshotAge < 1000); this.jump = false;
           move(this.body, input, CONFIG.tick, ARENA_SOLIDS, mode, bow);
-          const shot = bow ? this.bowView.step(input.firing, !!input.cancel, input.active) : null;
+          const drawing = this.bowView.charge, shot = bow ? this.bowView.step(input.firing, !!input.cancel, input.active) : null;
+          if (shot !== null) this.audio.bow('release');
+          else if (bow && drawing === 0 && this.bowView.charge > 0) this.audio.bow('draw');
+          else if (bow && drawing > 0 && this.bowView.charge === 0) this.audio.stopBow();
           if (shot !== null) this.bowView.shoot({ x: this.body.x, y: this.body.y + eyeHeight(this.body, mode), z: this.body.z }, input.yaw, input.pitch, shot);
+          this.footstep(this.ownSteps.update(this.body, CONFIG.tick), null);
           this.pending.push(input); if (this.pending.length > 120) this.pending.shift();
           this.network.send(input);
         }
@@ -206,6 +215,7 @@ export class Engine {
       }
       if (this.locked) {
         move(this.body, { forward: this.axis(this.settings.keys.forward, this.settings.keys.back), strafe: this.axis(this.settings.keys.right, this.settings.keys.left), jump: this.jump, crouch: this.crouching, yaw: this.yaw }, CONFIG.tick); this.jump = false;
+        this.footstep(this.ownSteps.update(this.body, CONFIG.tick), null);
       }
       this.camera.position.set(this.body.x, this.body.y + eyeHeight(this.body), this.body.z);
       this.camera.rotation.set(this.pitch, this.yaw, 0); this.camera.getWorldDirection(this.direction);
@@ -215,6 +225,11 @@ export class Engine {
     }
     this.camera.position.set(this.body.x, this.body.y + eyeHeight(this.body, this.network.snapshot?.mode ?? 'standard'), this.body.z); this.camera.rotation.set(this.pitch, this.yaw, 0);
     const remote = this.network.remote(now);
+    // Footsteps in every mode: the opponent online, or the roaming target in offline practice (always on the floor).
+    const target = this.practice.position, foe = remote ? (remote.hp > 0 ? remote.body : null) : !this.network.snapshot && this.practice.hp > 0 ? { x: target.x, y: 0, z: target.z, grounded: true } : null;
+    if (foe) this.footstep(this.enemySteps.update(foe, elapsedFrame), { x: foe.x, y: foe.y + 0.05, z: foe.z });
+    else this.enemySteps.reset();
+    this.camera.getWorldDirection(this.direction); this.audio.listen(this.camera.position, this.direction, this.up.set(0, 1, 0).applyQuaternion(this.camera.quaternion));
     const profile = this.practice.profile;
     const online = !!this.network.snapshot;
     const mode = MODES[this.network.snapshot?.mode ?? 'standard'];
@@ -249,6 +264,7 @@ export class Engine {
     if (now - this.lastHud >= 100) { this.publish({ air: bow ? { ready: 1 - (this.body.airCooldown ?? 0) / AIR.cooldown, seconds: this.body.airCooldown ?? 0 } : undefined, combat:{...(online ? this.network.snapshot?.players.find(p=>p.id===this.network.id)?.roundStats ?? emptyCombat() : this.practice.waveStats)}, lastWave:this.practice.lastWave, hp: this.hp, ownHp: this.ownHp, hit: this.hit, headshot: this.hit && (bow ? this.bowHead : online ? !!this.network.snapshot?.players.find(p => p.id === this.network.id)?.headshot : this.practice.headshot), locked: this.locked, seconds: this.tracked, damage: this.totalDamage, fps: this.stats.averageMs ? 1000/this.stats.averageMs : 0, ping: this.network.ping, wave: this.practice.wave, kills: this.practice.kills, speed: profile.speed, size: profile.width / BOT_MODEL.width, circle: profile.circle, diagnostics:{...this.stats,skippedTicks:this.skippedTicks,serverSkippedTicks:this.network.snapshot?.serverMetrics?.skippedTicks??0,serverTickMs:this.network.snapshot?.serverMetrics?.tickMs??0,drawCalls:this.renderer.info.render.calls,snapshotAge:online?this.network.snapshotAge:0,connection:online?(this.network.snapshotAge>1000?'STALE — INPUT PAUSED':'CONNECTED'):'OFFLINE PRACTICE'} }); this.lastHud = now; }
     this.frame = requestAnimationFrame(this.loop);
   };
+  private footstep(event: ReturnType<StepTracker['update']>, at: { x: number; y: number; z: number } | null) { if (event) this.audio.step(event.kind, at, event.loudness); }
   private setFov(fov: number) { if (Math.abs(this.camera.fov - fov) > 1e-3) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); } }
   /** Bow 1v1 frame: the opponent archer from the shared skeleton, your bow and arrows, and everyone else's arrows. */
   private bowFrame(now: number, elapsed: number, remote: ReturnType<Network['remote']>) {

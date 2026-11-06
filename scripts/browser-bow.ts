@@ -41,6 +41,9 @@ try {
   await until(async () => await engine<boolean>(a, "e.network.snapshot?.phase === 'live' && e.locked") && await engine<boolean>(b, 'e.locked'), 'live with the mouse captured');
   // Headless pointer lock can forward desktop mouse motion; steer by setting the view directly.
   for (const p of pages) await engine(p, "(document.removeEventListener('mousemove', e.mouse), true)");
+  // Record which sounds play, without changing what plays.
+  await engine(a, '((play) => { window.__sounds = []; e.audio.play = (kind, now) => { window.__sounds.push(kind); return play(kind, now); }; return true; })(e.audio.play.bind(e.audio))');
+  await engine(a, '((step) => { window.__steps = []; e.audio.step = (kind, at, loudness) => { window.__steps.push({ kind, at, loudness }); return step(kind, at, loudness); }; return true; })(e.audio.step.bind(e.audio))');
   const walk = async (p: Page, key: string, axis: 'x' | 'z', value: number, up: boolean, yaw: number) => {
     await engine(p, `(e.yaw = ${yaw}, e.pitch = 0, true)`); await p.keyboard.down(key);
     try { await until(async () => { const v = await engine<number>(p, `e.body.${axis}`); return up ? v >= value : v <= value; }, `walk ${key}`, 12000); } finally { await p.keyboard.up(key); }
@@ -48,6 +51,22 @@ try {
   // Out from behind the spawn walls to the open side of the pillar, about 12 m apart.
   await Promise.all([(async () => { await walk(a, 'd', 'x', 5, true, 0); await walk(a, 'w', 'z', 6.5, false, 0); })(), (async () => { await walk(b, 'a', 'x', 5, true, -Math.PI); await walk(b, 'w', 'z', -6.5, true, -Math.PI); })()]);
   await a.waitForTimeout(500);
+  // Footsteps: walking out, A heard B's steps placed at B in 3D and its own steps centred; and the listener's right is the ear that hears a step on the right.
+  const heard = await engine<{ kind: string; at: { x: number; z: number } | null; loudness: number }[]>(a, 'window.__steps');
+  const theirs = heard.filter(h => h.at), mine = heard.filter(h => !h.at), b0 = await engine<{ x: number; z: number }>(a, 'e.network.snapshot.players.find(p => p.id !== e.network.id).body');
+  assert.ok(theirs.length >= 3 && mine.length >= 3, `steps heard: ${theirs.length} theirs, ${mine.length} mine`);
+  assert.ok(Math.hypot(theirs.at(-1)!.at!.x - b0.x, theirs.at(-1)!.at!.z - b0.z) < 3, 'the last enemy step came from where the enemy is');
+  const ears = await engine<{ left: number; right: number }>(a, `(async () => {
+    const l = e.audio.context.listener, at = [l.positionX.value, l.positionY.value, l.positionZ.value], f = [l.forwardX.value, l.forwardY.value, l.forwardZ.value], u = [l.upX.value, l.upY.value, l.upZ.value];
+    const right = [f[1] * u[2] - f[2] * u[1], f[2] * u[0] - f[0] * u[2], f[0] * u[1] - f[1] * u[0]], ctx = new OfflineAudioContext(2, 9600, 48000), L = ctx.listener;
+    [L.positionX, L.positionY, L.positionZ].forEach((p, i) => p.value = at[i]); [L.forwardX, L.forwardY, L.forwardZ].forEach((p, i) => p.value = f[i]); [L.upX, L.upY, L.upZ].forEach((p, i) => p.value = u[i]);
+    const noise = ctx.createBuffer(1, 9600, 48000), d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource(), pan = ctx.createPanner(); src.buffer = noise; pan.panningModel = 'HRTF';
+    [pan.positionX, pan.positionY, pan.positionZ].forEach((p, i) => p.value = at[i] + right[i] * 3); src.connect(pan).connect(ctx.destination); src.start();
+    const out = await ctx.startRendering(), rms = c => Math.sqrt(out.getChannelData(c).reduce((s, v) => s + v * v, 0) / out.length);
+    return { left: rms(0), right: rms(1) }; })()`);
+  assert.ok(ears.right > 2 * ears.left, `a step to the right is louder in the right ear (${ears.left.toFixed(3)} / ${ears.right.toFixed(3)})`);
+  console.log(`Footsteps: ${theirs.length} enemy steps placed in 3D, ${mine.length} of your own; right ear ${(ears.right / ears.left).toFixed(1)}× louder for a step on the right.`);
   // Full-draw aim at height `y` on the opponent, lifted for the arrow's drop over the distance.
   const aim = async (y: number) => {
     const { me, them } = await engine<{ me: { x: number; y: number; z: number }; them: { x: number; y: number; z: number } }>(a, '({ me: e.body, them: e.network.snapshot.players.find(p => p.id !== e.network.id).body })');
@@ -61,6 +80,10 @@ try {
   await a.mouse.up();
   await until(async () => await opponentHp() < 100, 'the body shot lands', 5000);
   assert.equal(await opponentHp(), 25, 'a full draw to the torso does 75');
+  const audio = await engine<{ buffers: number; sounds: string[]; draw: number; release: number }>(a, '({ buffers: e.audio.buffers.size, sounds: window.__sounds, draw: e.audio.buffers.get("draw")?.duration, release: e.audio.buffers.get("release")?.duration })');
+  assert.equal(audio.buffers, 6, 'all six sounds decoded, including the two bow MP3s');
+  assert.deepEqual(audio.sounds.filter(k => k === 'draw' || k === 'release'), ['draw', 'release'], 'the draw creak, then the release');
+  console.log(`Bow sounds: draw ${audio.draw.toFixed(2)} s, release ${audio.release.toFixed(2)} s.`);
   await a.waitForTimeout(500); await aim(1.62); await a.mouse.down(); await a.waitForTimeout(900); await a.mouse.up();
   await until(() => engine<boolean>(a, "e.network.snapshot.phase === 'roundEnd'"), 'the headshot kills', 5000);
   assert.deepEqual(await engine<number[]>(a, 'e.network.snapshot.players.map(p => p.wins)'), [1, 0]);
