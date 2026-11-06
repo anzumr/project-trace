@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import type { ModeId } from '@trace/shared';
-import type { ClientEvents, ServerEvents, PlayerInput, RoomReply, Snapshot, QueueState, ActionReply } from '@trace/shared/protocol';
+import type { ClientEvents, ServerEvents, PlayerInput, RoomReply, Snapshot, QueueState, ActionReply, Game, Difficulty } from '@trace/shared/protocol';
 
 export class Network {
   readonly socket: Socket<ServerEvents, ClientEvents> = io({ autoConnect: false, reconnection: true, reconnectionDelay: 500, reconnectionDelayMax: 2000, transports: ['websocket', 'polling'] });
@@ -71,6 +71,18 @@ export class Network {
       return reply.snapshot;
     } catch (err) { this.error(err instanceof Error ? err.message : 'Connection failed.'); return null; }
   }
+  /** Starts Bow 1v1 practice against an archer bot in a room of your own. */
+  async practiceBow(difficulty: Difficulty, name?: string) {
+    try {
+      if (this.accountId && !this.snapshot) this.socket.disconnect();
+      await this.connect();
+      const reply = await this.socket.timeout(5000).emitWithAck('practiceBow', difficulty).catch(() => { throw new Error('Server did not respond. Try again.'); });
+      if (!reply.ok || !reply.snapshot) throw new Error(reply.error || 'Could not start practice.');
+      this.leftRoom = undefined; this.receive(reply.snapshot);
+      if (name) this.socket.emit('setName', name);
+      return reply.snapshot;
+    } catch (err) { this.error(err instanceof Error ? err.message : 'Connection failed.'); return null; }
+  }
   async findMatch(mode: ModeId) {
     try { await this.connect(); const result = await this.socket.timeout(5000).emitWithAck('queueJoin',mode); if(!result.ok)throw new Error(result.error); this.rememberPublic(true); this.error(''); }
     catch(error){this.error(error instanceof Error ? error.message : 'Could not enter queue.');}
@@ -91,7 +103,7 @@ export class Network {
   }
   send(input: PlayerInput) { if (this.socket.connected && this.snapshot) this.socket.emit('input', input); }
   ready() { if (this.snapshot) this.socket.emit('ready', this.snapshot.modeRevision); }
-  selectMode(mode: ModeId) { this.socket.emit('selectMode', mode); }
+  selectMode(mode: ModeId | Game) { this.socket.emit('selectMode', mode); }
   leave() { this.leftRoom=this.snapshot?.code;this.socket.emit('leave'); this.rememberPublic(false); this.clear(); }
   private clear() { this.viewTick = undefined; this.snapshot = null; this.seat = undefined; this.samples = []; this.update(null); }
   remote(now: number) {
@@ -105,7 +117,10 @@ export class Network {
     if (!from || !to) { this.viewTick = this.snapshot?.tick; return latest; }
     const t = Math.max(0, Math.min(1, (time - a.received) / Math.max(1, b.received - a.received)));
     this.viewTick = a.snapshot.tick + (b.snapshot.tick - a.snapshot.tick) * t;
-    return { ...latest, body: { ...latest.body, x: from.body.x + (to.body.x - from.body.x) * t, y: from.body.y + (to.body.y - from.body.y) * t, z: from.body.z + (to.body.z - from.body.z) * t, crouch: (from.body.crouch ?? 0) + ((to.body.crouch ?? 0) - (from.body.crouch ?? 0)) * t } };
+    const mix = (u: number, v: number) => u + (v - u) * t, turn = Math.atan2(Math.sin(to.yaw - from.yaw), Math.cos(to.yaw - from.yaw)), gait = from.gait ?? 0, next = to.gait ?? 0;
+    return { ...latest, yaw: from.yaw + turn * t, pitch: mix(from.pitch, to.pitch), gait: next >= gait ? mix(gait, next) : next,
+      bow: latest.bow && from.bow && to.bow ? { ...latest.bow, draw: mix(from.bow.draw, to.bow.draw), raise: mix(from.bow.raise, to.bow.raise) } : latest.bow,
+      body: { ...latest.body, x: mix(from.body.x, to.body.x), y: mix(from.body.y, to.body.y), z: mix(from.body.z, to.body.z), crouch: mix(from.body.crouch ?? 0, to.body.crouch ?? 0), vx: to.body.vx, vz: to.body.vz, grounded: to.body.grounded } };
   }
   dispose() { clearInterval(this.pingTimer); this.socket.removeAllListeners(); this.socket.disconnect(); }
 }

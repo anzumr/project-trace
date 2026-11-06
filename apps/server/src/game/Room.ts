@@ -1,13 +1,17 @@
 import { emptyCombat, measureCombat, type RoundCombat } from '@trace/shared/combat';
 import { CONFIG, ARENA_SOLIDS, spawn, move, arenaRay, MODES, isMode, eyeHeight, stance, type ModeId, type Vec3 } from '@trace/shared';
 import { BOT_MODEL, HEADSHOT_MULTIPLIER, tracePracticeModel } from '@trace/shared/practice';
-import { neutralInput, validateInput, type PlayerInput, type PlayerState, type Snapshot } from '@trace/shared/protocol';
+import { neutralInput, validateInput, type ArrowState, type BowState, type Difficulty, type Game, type PlayerInput, type PlayerState, type Snapshot } from '@trace/shared/protocol';
+import { BOW, GAIT_RATE, arrowDamage, flyArrow, launch, partAt, poseOf, skeleton, type ArcherPose, type Flight } from '@trace/shared/bow';
 import { matchRules } from '@trace/shared/ranked';
 import { randomUUID } from 'node:crypto';
 import { ExtraHardAI, visiblePoint } from './ExtraHardAI';
+import { ArcherBot } from './ArcherBot';
 import type { MatchKind, MatchResult } from './Results';
 
-type Seen = Vec3 & { crouch: number };
+type Seen = ArcherPose;
+type Arrow = Flight & { id: number; owner: string; born: number; lag: number; age: number; stuck?: boolean; on?: string; local?: ArrowState['local'] };
+const freshBow = (): BowState => ({ draw: 0, raise: 0, reload: 0, shots: 0, hits: 0, heads: 0 });
 /** Shots may rewind the target up to this far to match what the shooter saw (interpolation delay plus latency). */
 export const MAX_REWIND_TICKS = Math.round(0.3 / CONFIG.tick);
 type Participant = { opportunity: number; received: number; play: number; accountId?: string; state: PlayerState; queue: PlayerInput[]; input: PlayerInput; lastInput: number; lastSeq: number; packets: number; rateStart: number };
@@ -23,6 +27,9 @@ export class Room {
   private finalized = false;
   private liveTicks = 0;
   private ai: { id: string; brain: ExtraHardAI } | undefined;
+  private archer: { id: string; brain: ArcherBot } | undefined;
+  /** Set for a Bow 1v1 practice room against an archer bot. */
+  practice: Difficulty | undefined;
   get paused() { return this.kind !== 'private' && this.phase !== 'finished' && [...this.players.values()].some(p => p.state.connected === false); }
   readonly players = new Map<string, Participant>();
   phase: Snapshot['phase'] = 'lobby';
@@ -31,24 +38,37 @@ export class Room {
   tick = 0;
   match = 0;
   mode: ModeId = 'standard';
+  /** Bow 1v1 when set; otherwise the tracking duel. */
+  game: Game | undefined;
+  private arrows: Arrow[] = [];
+  private arrowSeq = 0;
   modeRevision = 0;
   get hostId() { return this.players.keys().next().value ?? ''; }
   selectMode(id: string, value: unknown) {
-    if (this.kind !== 'private') return false;
-    if (id !== this.hostId || !isMode(value) || !['lobby', 'finished'].includes(this.phase)) return false;
-    if (value !== this.mode) { this.mode = value; this.modeRevision++; this.clearInputs(); }
+    if (this.kind !== 'private' || this.practice) return false;
+    if (id !== this.hostId || (value !== 'bow' && !isMode(value)) || !['lobby', 'finished'].includes(this.phase)) return false;
+    // Bow 1v1 uses one body for everyone, so it always plays at standard size.
+    const game = value === 'bow' ? 'bow' : undefined, mode = value === 'bow' ? 'standard' : value;
+    if (game !== this.game || mode !== this.mode) { this.game = game; this.mode = mode; this.modeRevision++; this.clearInputs(); }
     return true;
   }
   round = 0;
   roundSerial = 0;
   roundWinner: string | null = null;
   private remainingTicks = 0;
-  readonly rules: ReturnType<typeof matchRules>;
-  constructor(readonly code: string, private options: { kind?: MatchKind; onResult?: (result: MatchResult, room: Room) => void } = {}) { this.kind = options.kind ?? 'private'; this.rules = matchRules(this.kind); }
+  get rules() { return matchRules(this.kind, this.game); }
+  constructor(readonly code: string, private options: { kind?: MatchKind; onResult?: (result: MatchResult, room: Room) => void } = {}) { this.kind = options.kind ?? 'private'; }
   addBot() {
     const id = randomUUID(); if (!this.add(id)) return;
     const p = this.players.get(id)!; p.state.name = 'Extra Hard AI [BOT]'; p.state.bot = true;
     this.ai = { id, brain: new ExtraHardAI() };
+  }
+  /** Turns this private room into Bow 1v1 practice against an archer bot of the given strength. */
+  addArcher(difficulty: Difficulty, random?: () => number) {
+    const id = randomUUID(); if (!this.add(id)) return false;
+    const p = this.players.get(id)!; p.state.name = `${difficulty[0].toUpperCase()}${difficulty.slice(1)} archer [BOT]`; p.state.bot = true;
+    this.game = 'bow'; this.mode = 'standard'; this.practice = difficulty; this.archer = { id, brain: new ArcherBot(difficulty, random) };
+    return true;
   }
   setConnected(id: string, connected: boolean) {
     const p = this.players.get(id); if (!p) return;
@@ -72,6 +92,8 @@ export class Room {
     this.resultStatus = status;
     if (this.finalized || this.match === 0) return;
     this.finalized = true;
+    // The results schema only knows the tracking modes; Bow 1v1 results are not saved yet.
+    if (this.game === 'bow') return;
     const result: MatchResult = { id: this.matchId, kind: this.kind, mode: this.mode, status, startedAt: this.startedAt, completedAt: new Date().toISOString(), reason: this.reason,
       players: [...this.players.values()].map(p => ({ combat: p.state.matchStats, rounds: this.rounds.map(r => ({...r, players:r.players.filter(v=>v.id===p.state.id)})), playerId: p.state.id, userId: p.accountId ?? null, name: p.state.name, bot: !!p.state.bot,
         outcome: status === 'cancelled' ? 'cancelled' : p.state.id === this.winner ? 'win' : 'loss', roundsWon: p.state.wins,
@@ -96,13 +118,13 @@ export class Room {
     if (revision !== this.modeRevision) return;
     const p = this.players.get(id); if (!p || !['lobby', 'finished'].includes(this.phase) || this.players.size !== 2) return;
     p.state.ready = true;
-    if (this.ai) this.players.get(this.ai.id)!.state.ready = true;
+    for (const bot of [this.ai, this.archer]) if (bot) this.players.get(bot.id)!.state.ready = true;
     if ([...this.players.values()].every(p => p.state.ready)) {
       this.winner = null; this.match++;
       this.matchId = randomUUID(); this.startedAt = new Date().toISOString(); this.finalized = false; this.liveTicks = 0; this.resultState = 'unavailable';
       this.resultStatus = undefined; this.rounds = []; this.lastRound = undefined;
       this.players.forEach(p => { p.opportunity = 0; p.received = 0; p.play = 0; });
-      this.players.forEach(p => Object.assign(p.state, { wins: 0, damage: 0, trackingSeconds: 0, firingSeconds: 0, matchStats: emptyCombat(), kills: 0 }));
+      this.players.forEach(p => Object.assign(p.state, { wins: 0, damage: 0, trackingSeconds: 0, firingSeconds: 0, matchStats: emptyCombat(), kills: 0, bow: this.game ? freshBow() : undefined, gait: this.game ? 0 : undefined }));
       this.startRound();
     }
   }
@@ -116,14 +138,20 @@ export class Room {
     this.players.forEach(p => { p.queue = []; p.input = neutralInput(p.lastSeq); p.state.ack = Math.max(0, p.lastSeq); p.lastInput = 0; p.state.hit = false; p.state.headshot = false; p.state.ready = false; });
   }
   private startRound() {
-    this.ai?.brain.reset();
+    this.ai?.brain.reset(); this.archer?.brain.reset();
     this.phase = 'countdown'; this.remainingTicks = Math.round(CONFIG.countdownSeconds / CONFIG.tick); this.history = [];
     this.round = 1 + [...this.players.values()].reduce((total, p) => total + p.state.wins, 0);
     this.roundSerial++; this.roundWinner = null; this.reason = '';
     this.clearInputs();
+    // Bow 1v1 respawns straight into play after the first countdown, swapping sides after every kill.
+    const bow = this.game === 'bow', swap = bow ? (this.round - 1) % 2 : 0;
+    if (bow && this.liveTicks > 0) { this.phase = 'live'; this.remainingTicks = 0; }
+    this.arrows = [];
     [...this.players.values()].forEach((p, i) => {
-      p.state.body = spawn(i ? -1 : 1);
-      Object.assign(p.state, { roundStats: emptyCombat(), hp: CONFIG.hp, yaw: i ? -Math.PI : 0, pitch: 0 });
+      const side = (i + swap) % 2;
+      p.state.body = spawn(side ? -1 : 1);
+      Object.assign(p.state, { roundStats: emptyCombat(), hp: CONFIG.hp, yaw: side ? -Math.PI : 0, pitch: 0 });
+      if (p.state.bow) Object.assign(p.state.bow, { draw: 0, raise: 0, reload: 0 });
     });
   }
   /** Target position at the client's rendered tick, interpolated and clamped to this round's recent history. */
@@ -133,8 +161,9 @@ export class Room {
     const at = Math.max(this.history[0].tick, Math.min(this.tick, view));
     const after = this.history.findIndex(h => h.tick >= at);
     const b = this.history[after], a = this.history[Math.max(0, after - 1)];
-    const from = a.bodies.get(id)!, to = b.bodies.get(id)!, t = b.tick === a.tick ? 1 : (at - a.tick) / (b.tick - a.tick);
-    return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, z: from.z + (to.z - from.z) * t, crouch: from.crouch + (to.crouch - from.crouch) * t };
+    const from = a.bodies.get(id)!, to = b.bodies.get(id)!, t = b.tick === a.tick ? 1 : (at - a.tick) / (b.tick - a.tick), mix = (u: number, v: number) => u + (v - u) * t, turn = Math.atan2(Math.sin(to.yaw - from.yaw), Math.cos(to.yaw - from.yaw));
+    return { x: mix(from.x, to.x), y: mix(from.y, to.y), z: mix(from.z, to.z), crouch: mix(from.crouch, to.crouch), yaw: from.yaw + turn * t, pitch: mix(from.pitch, to.pitch), draw: mix(from.draw, to.draw), raise: mix(from.raise, to.raise),
+      gait: to.gait >= from.gait ? mix(from.gait, to.gait) : to.gait, grounded: t < 0.5 ? from.grounded : to.grounded, speed: mix(from.speed, to.speed) };
   }
   private captureRound(winner:string|null,reason:string) {
     this.lastRound = { serial:this.roundSerial, round:this.round, winner, reason, duration:[...this.players.values()][0].state.roundStats!.duration,
@@ -159,8 +188,9 @@ export class Room {
     if (++p.packets > 100) return false;
     p.lastSeq = raw.seq; p.lastInput = now;
     // Select fields explicitly: client position, HP and hit assertions never enter state.
-    const input: PlayerInput = { seq: raw.seq, forward: raw.forward, strafe: raw.strafe, yaw: raw.yaw, pitch: raw.pitch, jump: raw.jump, crouch: raw.crouch === true, firing: raw.firing, active: raw.active, view: raw.view };
-    if (!input.firing) { p.input.firing = false; p.queue.forEach(queued => { queued.firing = false; }); }
+    const input: PlayerInput = { seq: raw.seq, forward: raw.forward, strafe: raw.strafe, yaw: raw.yaw, pitch: raw.pitch, jump: raw.jump, crouch: raw.crouch === true, firing: raw.firing, active: raw.active, view: raw.view, cancel: raw.cancel === true };
+    // Tracking damage stops the moment the button is released; a bow needs the held ticks to count the draw.
+    if (!input.firing && !this.game) { p.input.firing = false; p.queue.forEach(queued => { queued.firing = false; }); }
     if (!input.active) { p.queue = []; p.input = { ...input, forward: 0, strafe: 0, firing: false, jump: false, crouch: false }; p.state.ack = input.seq; p.state.hit = false; p.state.headshot = false; return true; }
     if (this.phase !== 'live' && this.phase !== 'suddenDeath') return false;
     if (p.queue.length >= 12) p.queue.shift();
@@ -171,7 +201,7 @@ export class Room {
     if (this.paused) return;
     this.tick++;
     if (this.phase === 'countdown') {
-      if (--this.remainingTicks <= 0) { this.phase = 'live'; this.remainingTicks = Math.round(CONFIG.roundSeconds / CONFIG.tick); this.clearInputs(); }
+      if (--this.remainingTicks <= 0) { this.phase = 'live'; this.remainingTicks = this.game ? 0 : Math.round(CONFIG.roundSeconds / CONFIG.tick); this.clearInputs(); }
       return;
     }
     if (this.phase === 'roundEnd') { if (--this.remainingTicks <= 0) this.startRound(); return; }
@@ -183,19 +213,26 @@ export class Room {
       const bot = this.players.get(this.ai.id)!, opponent = players.find(p => p !== bot)!;
       this.accept(this.ai.id, this.ai.brain.input(bot.state, opponent.state, this.mode, now, bot.lastSeq + 1), now);
     }
+    if (this.archer) {
+      const bot = this.players.get(this.archer.id)!, opponent = players.find(p => p !== bot)!;
+      this.accept(this.archer.id, this.archer.brain.input(bot.state, opponent.state, bot.lastSeq + 1), now);
+    }
     for (const p of players) {
       const next = p.queue.shift();
       if (next) { p.input = next; p.state.ack = next.seq; }
       else p.input = { ...p.input, jump: false };
       if (now - p.lastInput > 250) { p.input = neutralInput(p.state.ack); p.queue = []; }
       const input = p.input;
-      move(p.state.body, input.active ? input : { forward: 0, strafe: 0, yaw: p.state.yaw, jump: false }, CONFIG.tick, ARENA_SOLIDS, this.mode);
+      move(p.state.body, input.active ? input : { forward: 0, strafe: 0, yaw: p.state.yaw, jump: false }, CONFIG.tick, ARENA_SOLIDS, this.mode, !!this.game);
       if (input.active) { p.state.yaw = input.yaw; p.state.pitch = input.pitch; }
       p.state.hit = false; p.state.headshot = false;
       if (input.active && input.firing) p.state.firingSeconds += CONFIG.tick;
+      if (this.game && p.state.body.grounded) p.state.gait = ((p.state.gait ?? 0) + Math.hypot(p.state.body.vx, p.state.body.vz) * CONFIG.tick * GAIT_RATE) % (Math.PI * 200);
     }
-    this.history.push({ tick: this.tick, bodies: new Map(players.map(p => [p.state.id, { x: p.state.body.x, y: p.state.body.y, z: p.state.body.z, crouch: p.state.body.crouch ?? 0 }])) });
+    if (this.game) this.drawBows(players);
+    this.history.push({ tick: this.tick, bodies: new Map(players.map(p => [p.state.id, poseOf(p.state)])) });
     if (this.history.length > MAX_REWIND_TICKS + 1) this.history.shift();
+    if (this.game) { this.flyArrows(players); return; }
     // Evaluate both rays against the same tick before applying simultaneous damage.
     const hits = players.map((p, index) => {
       const target = players[1 - index].state;
@@ -230,11 +267,59 @@ export class Room {
       else this.endRound(players[0].state.hp > players[1].state.hp ? players[0].state.id : players[1].state.id, 'Time expired — higher health wins');
     }
   }
+  /** Holding fire draws (charge fills in BOW.draw seconds once reloaded); releasing shoots, and cancel or focus loss drops the draw. */
+  private drawBows(players: Participant[]) {
+    for (const p of players) {
+      const s = p.state, b = s.bow!, holding = p.input.active && p.input.firing && s.hp > 0;
+      b.reload = Math.max(0, b.reload - CONFIG.tick);
+      b.raise = Math.max(0, Math.min(1, b.raise + (holding ? 6 : -6) * CONFIG.tick));
+      if (p.input.cancel || !p.input.active || s.hp <= 0) b.draw = 0;
+      else if (holding) { if (b.reload <= 0) b.draw = Math.min(1, b.draw + CONFIG.tick / BOW.draw); }
+      else if (b.draw > 0) {
+        const eye = { x: s.body.x, y: s.body.y + eyeHeight(s.body, this.mode), z: s.body.z };
+        // The arrow is tested against where the shooter saw the opponent: the same lag, every tick of its flight.
+        const lag = p.input.view === undefined ? 0 : Math.max(0, Math.min(MAX_REWIND_TICKS, Math.round(this.tick - p.input.view)));
+        this.arrows.push({ ...launch(eye, s.yaw, s.pitch, b.draw), id: ++this.arrowSeq, owner: s.id, born: this.tick, lag, age: 0 });
+        b.draw = 0; b.reload = BOW.reload; b.shots++;
+      }
+    }
+    while (this.arrows.length > BOW.maxArrows) { const old = this.arrows.findIndex(a => a.stuck); this.arrows.splice(old >= 0 ? old : 0, 1); }
+  }
+  private flyArrows(players: Participant[]) {
+    for (const p of players) { p.play += CONFIG.tick; p.state.roundStats!.duration += CONFIG.tick; p.state.matchStats!.duration += CONFIG.tick; }
+    for (const a of this.arrows) {
+      a.age += CONFIG.tick;
+      if (a.stuck) continue;
+      const shooter = players.find(p => p.state.id === a.owner), target = players.find(p => p.state.id !== a.owner);
+      const seen = target && target.state.hp > 0 ? this.rewind(target.state.id, this.tick - a.lag) : undefined, body = seen && skeleton(seen);
+      const hit = flyArrow(a, CONFIG.tick, body && (point => partAt(body, point)));
+      if (!hit) continue;
+      a.stuck = true; a.age = 0;
+      if (!hit.part || !shooter || !target || !seen) continue;
+      const s = shooter.state, t = target.state, head = hit.part === 'head', before = t.hp;
+      t.hp = Math.max(0, t.hp - arrowDamage(a.charge, hit.part));
+      const dealt = before - t.hp;
+      s.damage += dealt; s.bow!.hits++; if (head) s.bow!.heads++; s.hit = true; s.headshot = head;
+      for (const stats of [s.roundStats!, s.matchStats!]) { stats.damage += dealt; if (head) stats.headDamage += dealt; }
+      for (const stats of [t.roundStats!, t.matchStats!]) stats.received += dealt;
+      if (before > 0 && t.hp === 0) s.kills = (s.kills ?? 0) + 1;
+      // Stick it where it landed, in the target's own frame, so it moves with them.
+      const fx = -Math.sin(seen.yaw), fz = -Math.cos(seen.yaw), rx = Math.cos(seen.yaw), rz = -Math.sin(seen.yaw), dx = hit.at.x - seen.x, dz = hit.at.z - seen.z, speed = Math.hypot(a.vx, a.vy, a.vz) || 1;
+      a.on = t.id; a.local = [dx * rx + dz * rz, hit.at.y - seen.y, dx * fx + dz * fz, (a.vx * rx + a.vz * rz) / speed, a.vy / speed, (a.vx * fx + a.vz * fz) / speed];
+    }
+    this.arrows = this.arrows.filter(a => a.age < (a.stuck ? BOW.stuck : BOW.life));
+    players.forEach((p, i) => { p.received = players[1 - i].state.damage; });
+    const dead = players.filter(p => p.state.hp <= 0);
+    if (dead.length === 2) this.endRound(null, 'Double knockout - no kill awarded.');
+    else if (dead.length) { const killer = players.find(p => p.state.hp > 0)!; this.endRound(killer.state.id, killer.state.name + ' eliminated ' + dead[0].state.name); }
+  }
   remove(id: string) {
     if (this.phase !== 'lobby' && this.phase !== 'finished') this.forfeit(id);
     this.players.delete(id);
     if (this.phase !== 'lobby') { if (this.phase !== 'finished') this.winner = [...this.players.keys()][0] ?? null; this.phase = 'finished'; this.remainingTicks = 0; this.reason = 'Opponent disconnected or left. Return to menu to create another room.'; }
     this.players.forEach(p => { p.state.ready = false; p.state.hit = false; p.state.headshot = false; p.queue = []; p.input = neutralInput(); });
   }
-  snapshot(): Snapshot { return { lastRound:this.lastRound, resultStatus: this.resultStatus, kind: this.kind, matchId: this.matchId, paused: this.paused, resultState: this.resultState, code: this.code, hostId: this.hostId, mode: this.mode, modeRevision: this.modeRevision, phase: this.phase, players: [...this.players.values()].map(p => structuredClone(p.state)), winner: this.winner, roundWinner: this.roundWinner, round: this.round, roundSerial: this.roundSerial, remaining: this.remainingTicks * CONFIG.tick, reason: this.reason, tick: this.tick, time: Date.now(), match: this.match }; }
+  snapshot(): Snapshot { return { lastRound:this.lastRound, resultStatus: this.resultStatus, kind: this.kind, matchId: this.matchId, paused: this.paused, resultState: this.resultState, code: this.code, hostId: this.hostId, mode: this.mode, modeRevision: this.modeRevision, phase: this.phase, players: [...this.players.values()].map(p => structuredClone(p.state)), winner: this.winner, roundWinner: this.roundWinner, round: this.round, roundSerial: this.roundSerial, remaining: this.remainingTicks * CONFIG.tick, reason: this.reason, tick: this.tick, time: Date.now(), match: this.match, game: this.game, practice: this.practice,
+    arrows: this.game ? this.arrows.map(a => { const speed = Math.hypot(a.vx, a.vy, a.vz) || 1; return { id: a.id, owner: a.owner, born: a.born, charge: a.charge, x: a.ox, y: a.oy, z: a.oz, vx: a.ux, vy: a.uy, vz: a.uz,
+      ...(a.stuck && !a.on ? { stuck: [a.x, a.y, a.z, a.vx / speed, a.vy / speed, a.vz / speed] as ArrowState['stuck'] } : {}), ...(a.on ? { on: a.on, local: a.local } : {}) }; }) : undefined }; }
 }

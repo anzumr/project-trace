@@ -3,31 +3,40 @@ import { ARENA, ARENA_SOLIDS, PILLAR, overlaps } from './arena';
 export { ARENA, ARENA_SOLIDS, PILLAR, SPAWN_COVERS, STAIRS, PLATFORMS, overlaps } from './arena';
 export { MODES, isMode, type ModeId } from './modes';
 export const CONFIG = { tick: 1 / 60, hp: 100, dps: 20, roundSeconds: 90, countdownSeconds: 3, roundSummarySeconds: 3, winsRequired: 2, suddenDeathSeconds: 15, arenaHalf: 14, speed: 7, acceleration: 38, airAcceleration: 12, gravity: 23, jumpSpeed: 8, radius: 0.35, height: 1.8, eyeHeight: 1.6, targetWidth: 0.9, targetHeight: 1.8, crouchHeight: 0.6, crouchSpeed: 0.5, crouchRate: 8 } as const;
+/** Bow 1v1 movement: one directional air jump per jump (at most every 4 s), and 60% speed while the bow is drawn. */
+export const AIR = { up: 7.5, dash: 9, cooldown: 4, drawPace: 0.6 } as const;
 export type Vec3 = { x: number; y: number; z: number };
 export type Box = { min: Vec3; max: Vec3; radius?: number; step?: boolean };
 export const COVER = PILLAR;
-/** `crouch` eases from 0 (standing) to 1 (fully crouched). */
-export type Body = Vec3 & { vx: number; vy: number; vz: number; grounded: boolean; crouch?: number };
-export type Input = { forward: number; strafe: number; jump: boolean; yaw: number; crouch?: boolean };
+/** `crouch` eases from 0 (standing) to 1 (fully crouched). `airReady`/`airCooldown` track the Bow 1v1 air jump. */
+export type Body = Vec3 & { vx: number; vy: number; vz: number; grounded: boolean; crouch?: number; airReady?: boolean; airCooldown?: number };
+export type Input = { forward: number; strafe: number; jump: boolean; yaw: number; crouch?: boolean; firing?: boolean };
 export const spawn = (side = 1): Body => ({ x: 0, y: 0, z: side * ARENA.spawnZ, vx: 0, vy: 0, vz: 0, grounded: true, crouch: 0 });
 /** Share of full height for the current crouch: 1 standing, CONFIG.crouchHeight fully crouched. */
 export const stance = (body: Pick<Body, 'crouch'>) => 1 - (1 - CONFIG.crouchHeight) * (body.crouch ?? 0);
 export const eyeHeight = (body: Pick<Body, 'crouch'>, mode: ModeId = 'standard') => CONFIG.eyeHeight * MODES[mode].scale * stance(body);
 const approach = (a: number, b: number, step: number) => a + Math.max(-step, Math.min(step, b - a));
-export function move(body: Body, input: Input, dt: number, solids: Box[] = ARENA_SOLIDS, mode: ModeId = 'standard') {
+export function move(body: Body, input: Input, dt: number, solids: Box[] = ARENA_SOLIDS, mode: ModeId = 'standard', bow = false) {
   const profile = MODES[mode], radius = CONFIG.radius * profile.scale, full = CONFIG.height * profile.scale;
+  if (bow) { body.airCooldown = Math.max(0, (body.airCooldown ?? 0) - dt); if (body.grounded) body.airReady = true; }
   const blockers = (h:number) => solids.filter(b=>overlaps(body,radius,b) && body.y < b.max.y-1e-8 && body.y+h>b.min.y+1e-8);
   const collides = (h: number) => blockers(h).length>0;
   // Crouch eases in and out; standing back up waits for headroom.
   const crouch = approach(body.crouch ?? 0, input.crouch ? 1 : 0, CONFIG.crouchRate * dt);
   if (crouch >= (body.crouch ?? 0) || !collides(full * stance({ crouch }))) body.crouch = crouch;
-  const height = full * stance(body), pace = CONFIG.speed * profile.speed * (1 - (1 - CONFIG.crouchSpeed) * (body.crouch ?? 0));
+  const height = full * stance(body), pace = CONFIG.speed * profile.speed * (1 - (1 - CONFIG.crouchSpeed) * (body.crouch ?? 0)) * (bow && input.firing ? AIR.drawPace : 1);
   const length = Math.max(1, Math.hypot(input.forward, input.strafe));
-  const f = input.forward / length, s = input.strafe / length;
+  const f = input.forward / length, s = input.strafe / length, dx = s * Math.cos(input.yaw) - f * Math.sin(input.yaw), dz = -f * Math.cos(input.yaw) - s * Math.sin(input.yaw);
   const accel = (body.grounded ? CONFIG.acceleration : CONFIG.airAcceleration) * dt;
-  body.vx = approach(body.vx, (s * Math.cos(input.yaw) - f * Math.sin(input.yaw)) * pace, accel);
-  body.vz = approach(body.vz, (-f * Math.cos(input.yaw) - s * Math.sin(input.yaw)) * pace, accel);
+  body.vx = approach(body.vx, dx * pace, accel);
+  body.vz = approach(body.vz, dz * pace, accel);
   if (input.jump && body.grounded) { body.vy = CONFIG.jumpSpeed * profile.jump; body.grounded = false; }
+  else if (bow && input.jump && body.airReady !== false && !body.airCooldown) {
+    // The air jump dashes the way you're steering; with no direction held it only lifts.
+    const steer = Math.hypot(dx, dz);
+    body.vy = AIR.up; if (steer > 1e-6) { body.vx = dx / steer * AIR.dash; body.vz = dz / steer * AIR.dash; }
+    body.airReady = false; body.airCooldown = AIR.cooldown;
+  }
   const stepping=body.grounded && !input.jump;
   for (const axis of ['x', 'z'] as const) {
     const old = body[axis];

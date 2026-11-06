@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from './game/Room';
-import { neutralInput } from '@trace/shared/protocol';
-import { CONFIG, MODES, type ModeId } from '@trace/shared';
+import { neutralInput, type PlayerInput } from '@trace/shared/protocol';
+import { AIR, CONFIG, MODES, type ModeId } from '@trace/shared';
+import { BOW, arrowDrop } from '@trace/shared/bow';
 import { BOT_MODEL } from '@trace/shared/practice';
 
 function advance(room: Room, seconds: number) { for (let i=0;i<Math.round(seconds/CONFIG.tick);i++) room.step(room.tick * CONFIG.tick * 1000); }
@@ -194,4 +195,80 @@ test('ranked is first to 3 with a 25-second stats break and no rematch', () => {
   assert.equal(room.phase, 'finished'); assert.equal(room.players.get('a')!.state.wins, 3); assert.equal(room.players.get('b')!.state.wins, 2);
   assert.equal(results.length, 1); assert.equal((results[0] as { kind: string }).kind, 'ranked');
   room.ready('a'); room.ready('b'); assert.equal(room.phase, 'finished', 'no ranked rematch');
+});
+
+/** Bow 1v1 room in play, archers 12 m apart on the open side of the pillar: `a` faces −z, `b` faces +z. */
+function bowLive(onResult?: (r: unknown) => void) {
+  const room = new Room('BOWAA', { onResult }); room.add('a'); room.add('b');
+  assert.equal(room.selectMode('b', 'bow'), false, 'only the host picks');
+  assert.ok(room.selectMode('a', 'bow')); assert.equal(room.game, 'bow'); assert.equal(room.mode, 'standard');
+  room.ready('a'); room.ready('b'); advance(room, CONFIG.countdownSeconds); assert.equal(room.phase, 'live');
+  const seqs: Record<string, number> = { a: 0, b: 0 };
+  const place = () => { const a = room.players.get('a')!.state, b = room.players.get('b')!.state; Object.assign(a.body, { x: 5, z: 6 }); Object.assign(b.body, { x: 5, z: -6 }); a.yaw = 0; b.yaw = Math.PI; };
+  /** One tick with `a` sending `input` (b stands still), returning the snapshot after it. */
+  const tick = (input: Partial<PlayerInput> = {}) => { const now = room.tick * CONFIG.tick * 1000; room.accept('a', { ...neutralInput(++seqs.a), active: true, yaw: 0, ...input }, now); room.accept('b', { ...neutralInput(++seqs.b), active: true, yaw: Math.PI }, now); room.step(now); return room.snapshot(); };
+  /** Hold the draw for `ticks`, then release at `pitch`. */
+  const shoot = (ticks: number, pitch: number, extra: Partial<PlayerInput> = {}) => { for (let i = 0; i < ticks; i++) tick({ firing: true, pitch, ...extra }); return tick({ firing: false, pitch, ...extra }); };
+  place();
+  return { room, a: room.players.get('a')!.state, b: room.players.get('b')!.state, tick, shoot, place };
+}
+const fullDrawPitch = (y: number, front: number) => { const t = (12 - front) / BOW.maxSpeed; return Math.atan2(y - 1.6 + arrowDrop(1, t).drop, 12 - front); };
+
+test('bow: a full draw to the torso does 75; release fires, the shot counts, and the arrow sticks in the target', () => {
+  const { a, b, tick, shoot } = bowLive();
+  let snap = shoot(45, fullDrawPitch(1.15, 0.16));
+  assert.equal(a.bow!.shots, 1); assert.equal(snap.arrows!.length, 1); assert.equal(snap.arrows![0].owner, 'a');
+  for (let i = 0; i < 20; i++) snap = tick();
+  assert.equal(b.hp, 25); assert.equal(a.bow!.hits, 1); assert.equal(a.bow!.heads, 0); assert.equal(a.damage, 75);
+  assert.equal(b.roundStats!.received, 75); assert.equal(a.matchStats!.damage, 75);
+  const arrow = snap.arrows![0]; assert.equal(arrow.on, 'b'); assert.equal(arrow.stuck, undefined); assert.ok(arrow.local && Math.abs(arrow.local[2] - 0.16) < 0.06, 'stuck in the front of the torso');
+  assert.equal(snap.game, 'bow');
+});
+test('bow: a headshot kills, the killer scores, and both respawn 2 s later on swapped sides without a countdown', () => {
+  const { room, a, b, shoot, tick } = bowLive();
+  shoot(45, fullDrawPitch(1.62, 0.15)); for (let i = 0; i < 20 && room.phase === 'live'; i++) tick();
+  assert.equal(b.hp, 0); assert.equal(a.bow!.heads, 1); assert.equal(a.kills, 1); assert.equal(a.wins, 1);
+  assert.equal(room.phase, 'roundEnd'); assert.match(room.reason, /eliminated/);
+  advance(room, 1.9); assert.equal(room.phase, 'roundEnd');
+  advance(room, 0.2); assert.equal(room.phase, 'live', 'straight back into play');
+  assert.equal(a.hp, 100); assert.equal(b.hp, 100); assert.ok(a.body.z < 0 && b.body.z > 0, 'sides swap after a kill');
+  assert.equal(room.snapshot().arrows!.length, 0, 'arrows clear on respawn');
+});
+test('bow: draw needs the reload, a tap shoots weak, cancel and focus loss drop the draw, and the draw slows you', () => {
+  const { a, tick, shoot } = bowLive();
+  shoot(1, 0); assert.equal(a.bow!.shots, 1, 'a one-tick tap still shoots');
+  assert.ok(a.bow!.reload > 0);
+  shoot(10, 0); assert.equal(a.bow!.shots, 1, 'holding during the reload draws nothing, so releasing shoots nothing');
+  for (let i = 0; i < 20; i++) tick();
+  shoot(10, 0); assert.equal(a.bow!.shots, 2);
+  for (let i = 0; i < 25; i++) tick();
+  for (let i = 0; i < 30; i++) tick({ firing: true });
+  assert.ok(a.bow!.draw > 0.5); tick({ firing: false, cancel: true }); assert.equal(a.bow!.shots, 2); assert.equal(a.bow!.draw, 0);
+  for (let i = 0; i < 30; i++) tick({ firing: true });
+  tick({ active: false, firing: false }); assert.equal(a.bow!.shots, 2, 'losing focus never fires');
+  for (let i = 0; i < 40; i++) tick({ firing: true, forward: 1 });
+  assert.ok(Math.abs(Math.hypot(a.body.vx, a.body.vz) - CONFIG.speed * AIR.drawPace) < 1e-6);
+});
+test('bow: arrows are tested against where the shooter saw the target, not where it is now', () => {
+  for (const [lagged, expected] of [[true, 25], [false, 100]] as const) {
+    const { room, b, shoot, tick } = bowLive();
+    for (let i = 0; i < 20; i++) tick();
+    const view = lagged ? room.tick - 12 : undefined;
+    shoot(45, fullDrawPitch(1.15, 0.16), { view });
+    b.body.x = 8; // dodged after the shooter's view, which the shooter could not see yet
+    for (let i = 0; i < 20; i++) { const now = room.tick * CONFIG.tick * 1000; room.accept('b', { ...neutralInput(1000 + room.tick), active: true, yaw: Math.PI }, now); room.step(now); }
+    assert.equal(b.hp, expected);
+  }
+});
+test('bow: first to 5 kills wins; the result is not saved yet; validation keeps cancel boolean', () => {
+  const results: unknown[] = [], { room, a, b } = bowLive(r => results.push(r));
+  assert.equal(room.rules.wins, 5);
+  for (let kill = 1; kill <= 5; kill++) {
+    b.hp = 0; room.step(room.tick * CONFIG.tick * 1000);
+    if (kill < 5) { assert.equal(room.phase, 'roundEnd'); advance(room, 2.1); assert.equal(room.phase, 'live'); }
+  }
+  assert.equal(room.phase, 'finished'); assert.equal(room.winner, 'a'); assert.equal(a.wins, 5); assert.equal(results.length, 0);
+  assert.equal(room.accept('a', { ...neutralInput(999), active: true, cancel: 'yes' }, 1), false);
+  assert.ok(room.selectMode('a', 'agile')); assert.equal(room.game, undefined); assert.equal(room.mode, 'agile');
+  assert.equal(new Room('PUBLC', { kind: 'public' }).selectMode('a', 'bow'), false);
 });

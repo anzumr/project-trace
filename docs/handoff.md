@@ -113,6 +113,58 @@ The single tabbed menu panel became dedicated screens, designed first on a canva
 - Migration `202611040002_account_deletion.sql` adds a `before delete` trigger on `profiles`. Deleting the Auth user cascades to profile, XP, stats, combat totals, rank, rank history and friends. Opponents keep the match, but the trigger renames the player to "Deleted player" in `match_participants`, in the saved rounds in `match_combat`, and in the private result receipts (the user ID is removed there too). The username is released. Deleting a user from the Supabase dashboard runs the same trigger. Covered on PGlite in `apps/server/src/account-deletion.test.ts`. **Not applied yet: apply it in Supabase before deploying this server.**
 - The privacy policy now describes in-game deletion (email still works too).
 
+### 15. Bow 1v1, phase 1: private rooms (6 Nov 2026)
+- **Design (agreed with the user):**
+  - Stick-figure archers with a round "Shield" torso (broad chest, narrow hips), all at Standard size. Every archer has a red body and a white head (changed from red/blue on 6 Nov at the user's request).
+  - Hold fire to draw (full in 0.75 s, hold forever), release to shoot; right-click cancels; 60% move speed while drawing; 0.35 s to load the next arrow.
+  - Damage only where the arrow touches the model: torso 25 (tap) to 75 (full), head ×2, arms and legs ×0.6. No random spread.
+  - Flight (revised 6 Nov at the user's request): a tap leaves at 16 m/s under 20 m/s² and lobs like a grenade (about 14 m at 45°). A full draw leaves at 60 m/s, flies dead flat for 0.15 s (about 9 m), then 18 m/s² ramps in over 0.1 s and curves it down: about 0.17 m of drop at 20 m and 0.43 m at 25 m. `arrowDrop`/`arrowAt` give the exact path from the launch, so the server, the client and the bot agree.
+  - Directional air jump: one per jump and at most every 4 s; it lifts (7.5 m/s) and dashes 9 m/s the way you steer.
+  - First to 5 kills, no time limit, current arena. After each kill both players respawn 2 s later behind the spawn walls, switching sides, at full HP. The first life starts with the normal countdown, respawns don't.
+  - Approved previews: models, animations and first-person view were shown as inline 3D widgets in chat. The first-person bow is held low and nearly flat across the bottom of the screen with the drawing hand off screen (the user's reference framing), but the bow and arm are our own design.
+- **Shared** `packages/shared/src/bow.ts`:
+  - `BOW` rules, `arrowSpeed`, `arrowDamage`.
+  - `skeleton(pose)` builds the archer's joints from synced state (position, yaw, pitch, crouch, `draw`, `raise`, `gait`, grounded, speed); `partAt` is the hit test (head sphere, elliptical lathe torso `TORSO`, limb capsules).
+  - `flyArrow`/`arenaHit`/`launch` handle flight and collisions (solids, floor, circular wall).
+  - The client draws exactly `skeleton()`, so what you see is what you hit.
+  - `move(..., bow=true)` adds the air jump and the draw slowdown. Body has `airReady`/`airCooldown` so the client predicts it.
+- **Protocol:**
+  - `PlayerInput.cancel` (validated, copied in `Room.accept`).
+  - `PlayerState.bow` (draw, raise, reload, shots, hits, heads) and `gait`.
+  - `Snapshot.game = 'bow'` and `arrows`: each carries its launch (origin, velocity, charge, `born` tick) so clients replay the path, plus `stuck` (where it stopped in the arena) or `on` a player with a local offset.
+  - `selectMode` also accepts `'bow'`, and `matchRules(kind, game)` gives 5 kills / 2 s for bow.
+- **Server** (`Room.ts`):
+  - `game` is separate from `mode`; picking Bow forces Standard.
+  - `drawBows` counts held ticks into the draw (needs the reload done; cancel or focus loss drops it, never shoots).
+  - `flyArrows` steps every arrow each tick against the target rewound by the shooter's view lag (the same history as hitscan, now storing the full pose), sticks arrows in walls (3 s) or in the player they hit, applies damage and kills, and ends the "round" on a death.
+  - Tracking-only release handling (`firing` cleared in the queue) is skipped for bow so short taps still shoot.
+- **Bow results aren't saved:** `finishResult` returns early because the SQL `mode` check only allows the four tracking modes; phase 3 adds a migration.
+- **Not in the public queue yet:** Quick Play still only accepts `ModeId`, so bow can't reach a public room.
+- **Client:**
+  - `BowModel.ts`: the recurve bow geometry and arrows.
+  - `ArcherModel.ts`: the opponent, with a death fall and fade.
+  - `BowView.ts`: the first-person bow, predicted charge mirroring the server's order, cosmetic own arrows that leave from the bow and blend onto the eye path in 0.12 s, and server arrows extrapolated to the rendered tick.
+  - `Engine.bowFrame` ties these together. The camera zooms 85°→80° while drawing.
+  - HUD: kill pips, "FIRST TO 5", arrows hit, accuracy, headshots, an AIR JUMP cooldown bar at the bottom centre, "KILL"/"ELIMINATED" with the respawn count, your health at the bottom left. The charge ring around the crosshair was removed at the user's request.
+  - `BowResults` replaces the round table at the end.
+  - The room screen and mode picker show Bow 1v1 (private rooms only) with an archer preview.
+- **Tests:**
+  - `bow.test.ts`: damage, hit zones, flight, air jump.
+  - Bow cases in `room.test.ts`: body shot 75, headshot kill and swapped respawn, reload, tap, cancel and focus loss, lag compensation, first to 5 not saved.
+  - `npm.cmd run test:bow`: two Chrome guests play a real match (mode pick, 75 body shot, headshot kill, respawn swap, air-jump dash) and save screenshots to `test-results/bow-*.png`.
+- **Next phase:** a Bow Quick Play queue plus saved results with separate Bow stats in Career and leaderboards. It needs a migration allowing the bow mode and its stats.
+
+### 16. Bow 1v1, phase 2: practice bot (6 Nov 2026)
+- **Where:** Home → "Bow practice", or Play → the "BOW PRACTICE" card → Easy / Normal / Hard. Guests can play, and nothing is recorded.
+- **How it runs:** the `practiceBow(difficulty)` socket event creates a private room containing you and an archer bot (`Room.addArcher`). The room is locked to Bow 1v1 (`selectMode` refuses), full, and deleted when you leave (a room with only bots left is removed). It plays exactly like a real match on the server.
+- **Bot** (`apps/server/src/game/ArcherBot.ts`, tuned by `ARCHER_SKILL`):
+  - It walks out of cover using the steering now shared with the Extra Hard AI (`steer` in `ExtraHardAI.ts`).
+  - Once it can see you it waits a reaction time, draws to a planned charge, and releases when its aim settles. It leads you and lifts for drop, each with per-shot error and a misjudged-drop factor.
+  - It strafes and hops. Normal and Hard air-jump sideways when you aim a strong draw at them.
+  - Measured hit rates over 6 seeds × 40 s at about 12 m: standing target Easy 29%, Normal 70%, Hard 95%; strafing target 12%, 39%, 77%.
+- **UI:** the room screen shows "Bow practice" with chips instead of the mode picker, "START PRACTICE", and "PLAY AGAIN" at the end (which re-captures the mouse).
+- **Tests:** `apps/server/src/archer-bot.test.ts` (Hard kills a standing target; accuracy rises Easy < Normal < Hard; the bot leaves cover and shoots; Hard dodges with the air jump and Easy never does; the socket event is validated, the room is full and it is deleted on leave). `npm.cmd run test:bow` now also starts Hard practice and waits for the bot to shoot.
+
 ## External setup done (outside the repo)
 
 - **Supabase**

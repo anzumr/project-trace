@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { Server } from 'socket.io';
 import { CONFIG } from '@trace/shared';
-import type { ClientEvents, ServerEvents, RoomReply } from '@trace/shared/protocol';
+import { isDifficulty, type ClientEvents, type ServerEvents, type RoomReply } from '@trace/shared/protocol';
 import { Room } from './game/Room';
 import { serveHttp } from './net/http';
 import { TokenBucket } from './net/RateLimit';
@@ -98,7 +98,7 @@ export function createGameServer(options: { serveClient?: boolean; verifyIdentit
       for (const other of io.sockets.sockets.values()) if ((other.data.identity as Identity | undefined)?.userId === userId) { other.emit('notice', 'This account was deleted.'); other.disconnect(true); }
     });
     let lastAction = -Infinity;
-    const leave = () => { if (peer) matchmaking.leave(peer); if (!room) return; const old = room; socket.leave(old.code); if (old.kind === 'private') old.remove(playerId); if (!old.players.size) rooms.delete(old.code); else io.to(old.code).emit('snapshot', old.snapshot()); room = undefined; playerId = socket.id; };
+    const leave = () => { if (peer) matchmaking.leave(peer); if (!room) return; const old = room; socket.leave(old.code); if (old.kind === 'private') old.remove(playerId); if (![...old.players.values()].some(p => !p.state.bot)) rooms.delete(old.code); else io.to(old.code).emit('snapshot', old.snapshot()); room = undefined; playerId = socket.id; };
     const limited = (reply: (result: RoomReply) => void) => { const now = performance.now(); if (now - lastAction < 500) { reply({ ok: false, error: 'Please wait a moment before trying again.' }); return true; } lastAction = now; return false; };
     socket.on('create', reply => {
       if (typeof reply !== 'function' || limited(reply)) return;
@@ -106,6 +106,15 @@ export function createGameServer(options: { serveClient?: boolean; verifyIdentit
       if (identity && (matchmaking.hasActivity(identity.userId) || occupied(identity.userId))) { reply({ ok: false, error: 'This account is already in a queue or room.' }); return; }
       if (rooms.size >= 100) { reply({ ok: false, error: 'Server is at capacity.' }); return; }
       room = makeRoom(); room.add(socket.id, identity); rooms.set(room.code, room); socket.join(room.code);
+      reply({ ok: true, snapshot: room.snapshot() });
+    });
+    socket.on('practiceBow', (difficulty, reply) => {
+      if (typeof reply !== 'function' || limited(reply)) return;
+      if (room) { reply({ ok: false, error: 'Leave your current room first.' }); return; }
+      if (!isDifficulty(difficulty)) { reply({ ok: false, error: 'Choose Easy, Normal or Hard.' }); return; }
+      if (identity && (matchmaking.hasActivity(identity.userId) || occupied(identity.userId))) { reply({ ok: false, error: 'This account is already in a queue or room.' }); return; }
+      if (rooms.size >= 100) { reply({ ok: false, error: 'Server is at capacity.' }); return; }
+      room = makeRoom(); room.add(socket.id, identity); room.addArcher(difficulty); rooms.set(room.code, room); socket.join(room.code);
       reply({ ok: true, snapshot: room.snapshot() });
     });
     socket.on('join', (code, reply) => {

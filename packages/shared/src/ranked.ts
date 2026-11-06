@@ -1,4 +1,5 @@
 import { CONFIG } from './index';
+import { BOW } from './bow';
 
 export const TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Emerald', 'Diamond', 'Masters', 'Grand Masters'] as const;
 /** Ranked rules. `points` are total RP: 100 per division, Bronze 4 starts at 0 and Grand Masters 1 (3100+) has no cap. */
@@ -9,7 +10,8 @@ export const STREAK = [1, 1, 1, 1.3, 1.45, 1.6, 1.75] as const;
 export const streakMultiplier = (run: number) => STREAK[Math.max(0, Math.min(STREAK.length - 1, run))];
 
 export type MatchRules = { wins: number; summarySeconds: number };
-export const matchRules = (kind?: string): MatchRules => kind === 'ranked' ? { wins: RANKED.wins, summarySeconds: RANKED.summarySeconds } : { wins: CONFIG.winsRequired, summarySeconds: CONFIG.roundSummarySeconds };
+/** Bow 1v1 counts kills, not rounds: first to 5, with a 2-second respawn between kills. */
+export const matchRules = (kind?: string, game?: string): MatchRules => game === 'bow' ? { wins: BOW.kills, summarySeconds: BOW.respawn } : kind === 'ranked' ? { wins: RANKED.wins, summarySeconds: RANKED.summarySeconds } : { wins: CONFIG.winsRequired, summarySeconds: CONFIG.roundSummarySeconds };
 
 export type Rank = { tier: number; division: number; points: number };
 /** 0 = Bronze 4 … 31 = Grand Masters 1. */

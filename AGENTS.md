@@ -4,11 +4,11 @@ krazer.io (repo name Project Trace): a first-person 1v1 mouse-tracking duel game
 
 ## Layout
 
-- `packages/shared/src`: code both sides run. Physics `move()`, crouch helpers `stance`/`eyeHeight` and `CONFIG` in `index.ts`; character `modes.ts`; network `protocol.ts` (`validateInput`); `practice.ts` (practice bot, hitboxes); `combat.ts` (stats); `ranked.ts` (tiers, rank points, queue ranges; mirrored in SQL by `trace_private.rank_step`).
-- `apps/server/src`: `game/Room.ts` (authoritative tick, hit tests, lag-compensation `rewind`), `game/ExtraHardAI.ts`, `server.ts`, `net/http.ts` (static serving, CSP, file-type allow list), results/outbox, Supabase auth.
+- `packages/shared/src`: code both sides run. Physics `move()`, crouch helpers `stance`/`eyeHeight` and `CONFIG` in `index.ts`; character `modes.ts`; network `protocol.ts` (`validateInput`); `practice.ts` (practice bot, hitboxes); `combat.ts` (stats); `ranked.ts` (tiers, rank points, queue ranges; mirrored in SQL by `trace_private.rank_step`). `bow.ts` (Bow 1v1: rules, the archer `skeleton` that is both drawn and hit, arrow flight).
+- `apps/server/src`: `game/Room.ts` (authoritative tick, hit tests, lag-compensation `rewind`), `game/ExtraHardAI.ts`, `game/ArcherBot.ts` (Bow practice bot), `server.ts`, `net/http.ts` (static serving, CSP, file-type allow list), results/outbox, Supabase auth.
 - `apps/client/src`:
   - `main.tsx`: screen routing.
-  - `game/Engine.ts`: render loop, input, prediction.
+  - `game/Engine.ts`: render loop, input, prediction. Bow 1v1 visuals: `game/ArcherModel.ts`, `game/BowView.ts` (first-person bow, arrows), `game/BowModel.ts`.
   - `net/Network.ts`.
   - `ui/`: `TopBar`, `HomeScreen`, `PlayScreen`, `RoomScreen`, `QuickPlay` (queue), `SettingsPanel`, `CombatHud`, `CareerScreen` (match history), `settings.ts` including keybinds and game sensitivity matching.
   - `auth/`: `AccountPanel`, `ProgressPanel`, `useProgress`, `client.ts`.
@@ -21,6 +21,7 @@ krazer.io (repo name Project Trace): a first-person 1v1 mouse-tracking duel game
 - `npm.cmd run typecheck`, `npm.cmd test`: run both before every commit.
 - `npm.cmd run build`, then `npm.cmd run test:production`: production build and smoke test.
 - `npm.cmd run test:browser`: two-Chrome end-to-end run. Slow, occasionally flaky; see the handoff.
+- `npm.cmd run test:bow`: two Chrome guests play a Bow 1v1 match end to end, then Bow practice against the Hard bot.
 - `npm.cmd run test:load`: ramps fake players against an isolated local server (no database writes). `-- --url https://krazer.io` tests the live site: it slows real games and saves guest `loadtest-…` results, so ask first.
 
 ## Conventions

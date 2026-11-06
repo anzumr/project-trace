@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { CONFIG, MODES, type ModeId } from '@trace/shared';
 import type { Network } from '../net/Network';
+import { DIFFICULTIES, type Difficulty } from '@trace/shared/protocol';
+import { BOW } from '@trace/shared/bow';
 import type { PlayerRank } from '../auth/useProgress';
 import { ModePreview } from './ModePicker';
 import { RankedPanel } from './Ranked';
@@ -10,10 +12,10 @@ const modeList = Object.entries(MODES) as [ModeId, (typeof MODES)[ModeId]][];
 const max = { scale: Math.max(...modeList.map(([, m]) => m.scale)), speed: Math.max(...modeList.map(([, m]) => m.speed)), jump: Math.max(...modeList.map(([, m]) => m.jump)) };
 const Stat = ({ label, value, top }: { label: string; value: number; top: number }) => <span className="stat-line">{label}<span className="bar"><i style={{ width: `${100 * value / top}%` }}/></span><b>{value}×</b></span>;
 
-export function PlayScreen({ network, quickPlay, signedIn, username, rank, xp, roomBlocked, busy, playerName, setPlayerName, code, setCode, createRoom, joinRoom, practice, practiceStarted, wave, back, openAccount }: {
+export function PlayScreen({ network, quickPlay, signedIn, username, rank, xp, roomBlocked, busy, playerName, setPlayerName, code, setCode, createRoom, joinRoom, bowPractice, practice, practiceStarted, wave, back, openAccount }: {
   network?: Network; quickPlay: boolean; signedIn: boolean; username?: string; rank: PlayerRank | null; xp: number; roomBlocked: boolean; busy: boolean;
   playerName: string; setPlayerName: (name: string) => void; code: string; setCode: (code: string) => void;
-  createRoom: () => void; joinRoom: () => void; practice: () => void; practiceStarted: boolean; wave: number; back: () => void; openAccount: () => void;
+  createRoom: () => void; joinRoom: () => void; bowPractice: (difficulty: Difficulty) => void; practice: () => void; practiceStarted: boolean; wave: number; back: () => void; openAccount: () => void;
 }) {
   const [mode, setMode] = useState<ModeId>('standard'), [searching, setSearching] = useState(false);
   const find = async () => { setSearching(true); try { await network!.findMatch(mode); } finally { setSearching(false); } };
@@ -50,6 +52,12 @@ export function PlayScreen({ network, quickPlay, signedIn, username, rank, xp, r
         <p>Endless offline waves. Targets get faster, then smaller, until they become a micro-orb.</p>
         <span className="meta">{practiceStarted ? `RESUME · WAVE ${wave}` : 'NO ACCOUNT NEEDED · NOT RECORDED'}</span>
       </button>
+
+      <section className="mode-card wide" aria-label="Bow practice">
+        <div className="top"><Target size={30} color="var(--text-2)"/></div>
+        <div><h3>BOW PRACTICE</h3><p>Bow 1v1 against an archer bot, first to {BOW.kills} kills. Easy misses a lot; Hard leads its shots and air-jumps out of your aim. Not recorded.</p></div>
+        <div className="difficulty-row" role="group" aria-label="Bot difficulty">{DIFFICULTIES.map(d => <button key={d} type="button" className="btn-dark" disabled={roomBlocked} onClick={() => bowPractice(d)}>{d[0].toUpperCase() + d.slice(1)}</button>)}</div>
+      </section>
     </div>
 
     <div className="section-head"><h2 className="eyebrow">QUICK PLAY · CHARACTER MODE</h2><span>Size, speed and jump change together. Both players always share the same mode.</span></div>

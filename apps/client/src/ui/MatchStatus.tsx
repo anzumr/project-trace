@@ -5,6 +5,8 @@ import { matchRules } from '@trace/shared/ranked';
 export function matchMessage(room: Snapshot) {
   if (room.paused) return 'Match paused · waiting for reconnection (20-second grace)';
   if (room.phase === 'lobby') return 'Waiting for both players';
+  if (room.game === 'bow' && room.phase === 'roundEnd') return room.roundWinner ? `${room.players.find(p => p.id === room.roundWinner)?.name ?? 'Player'} gets the kill` : 'Double knockout — no kill';
+  if (room.game === 'bow' && room.phase === 'live') return 'Bow 1v1 · first to 5 kills';
   if (room.phase === 'countdown') return `Round ${room.round} starts in ${Math.ceil(room.remaining)}`;
   if (room.phase === 'suddenDeath') return 'Sudden death — first hit wins';
   if (room.phase === 'roundEnd') return room.roundWinner ? `${room.players.find(p => p.id === room.roundWinner)?.name ?? 'Player'} wins the round` : 'Draw — replaying round';

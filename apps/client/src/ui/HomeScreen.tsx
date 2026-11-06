@@ -31,9 +31,9 @@ function ProgressCard({ account, progress: p, openAccount, career }: { account: 
   </>;
 }
 
-export function HomeScreen({ account, progress, practiceStarted, wave, keys, play, practice, privateRoom, settings, openAccount, career }: {
+export function HomeScreen({ account, progress, practiceStarted, wave, keys, play, practice, privateRoom, bowPractice, settings, openAccount, career }: {
   account: ReturnType<typeof useAccount>; progress: Progress; practiceStarted: boolean; wave: number; keys: Keybinds;
-  play: () => void; practice: () => void; privateRoom: () => void; settings: () => void; openAccount: () => void; career: () => void;
+  play: () => void; practice: () => void; privateRoom: () => void; bowPractice: () => void; settings: () => void; openAccount: () => void; career: () => void;
 }) {
   return <div className="home wrap">
     <div>
@@ -42,6 +42,7 @@ export function HomeScreen({ account, progress, practiceStarted, wave, keys, pla
       <nav className="main-nav" aria-label="Main menu">
         <button className="btn-primary big" onClick={play}><span><strong>PLAY</strong><small>Quick Play · public 1v1 · best of 3</small></span><Arrow size={28}/></button>
         <button className="nav-item" onClick={practice}><span><strong>Practice</strong><small>{practiceStarted ? `Resume · wave ${wave}` : 'Endless waves · offline'}</small></span><Chevron/></button>
+        <button className="nav-item" onClick={bowPractice}><span><strong>Bow practice</strong><small>Bow 1v1 against an Easy, Normal or Hard archer bot</small></span><Chevron/></button>
         <button className="nav-item" onClick={privateRoom}><span><strong>Private room</strong><small>Duel a friend with a room code</small></span><Chevron/></button>
         <button className="nav-item" onClick={settings}><span><strong>Settings</strong><small>Crosshair, sensitivity, audio, graphics</small></span><Chevron/></button>
       </nav>

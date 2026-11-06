@@ -1,10 +1,13 @@
 import { CombatAudio } from './CombatAudio';
 import { emptyCombat, type CombatStats } from '@trace/shared/combat';
 import * as THREE from 'three';
-import { CONFIG, ARENA_SOLIDS, MODES, spawn, move, eyeHeight, stance } from '@trace/shared';
+import { AIR, CONFIG, ARENA_SOLIDS, MODES, spawn, move, eyeHeight, stance } from '@trace/shared';
 import { Practice, BOT_MODEL } from '@trace/shared/practice';
+import { partAt, poseOf, skeleton } from '@trace/shared/bow';
 import type { PlayerInput, Snapshot, QueueState } from '@trace/shared/protocol';
 import { createBotModel } from './BotModel';
+import { ArcherModel, ARCHER_BODY } from './ArcherModel';
+import { BowView, type Anchor } from './BowView';
 import { createArena } from './Arena';
 import { Network } from '../net/Network';
 import { TargetHealth } from './TargetHealth';
@@ -13,7 +16,8 @@ import { FrameGate, FrameMetrics, type FrameStats } from './Performance';
 import { normalizeKey, type Settings } from '../ui/settings';
 export type { Settings } from '../ui/settings';
 export type PracticeSummary = { duration:number; stats:CombatStats; waves:number; average:number|null; best:number|null; worst:number|null };
-export type Hud = { combat?:CombatStats; lastWave?:{wave:number;stats:CombatStats}|null;  hp: number; ownHp: number; hit: boolean; headshot: boolean; locked: boolean; seconds: number; damage: number; fps: number; ping: number; wave: number; kills: number; speed: number; size: number; circle: boolean; diagnostics?: FrameStats & { skippedTicks:number; serverSkippedTicks:number; serverTickMs:number; drawCalls:number; snapshotAge:number; connection:string } };
+/** `air` is the Bow 1v1 air jump: `ready` fills 0→1 over the cooldown, `seconds` is what is left of it. */
+export type Hud = { air?: { ready: number; seconds: number }; combat?:CombatStats; lastWave?:{wave:number;stats:CombatStats}|null;  hp: number; ownHp: number; hit: boolean; headshot: boolean; locked: boolean; seconds: number; damage: number; fps: number; ping: number; wave: number; kills: number; speed: number; size: number; circle: boolean; diagnostics?: FrameStats & { skippedTicks:number; serverSkippedTicks:number; serverTickMs:number; drawCalls:number; snapshotAge:number; connection:string } };
 export class Engine {
   private audio = new CombatAudio(()=>this.settings,message=>this.onError(message));
   private practiceSession = 0;
@@ -28,6 +32,18 @@ export class Engine {
   private trainingModel = this.bot.group;
   private trainingMaterial = this.bot.bodyMaterial;
   private healthBar = new TargetHealth();
+  private archer = new ArcherModel();
+  private bowView: BowView;
+  /** Bow input edges: a click shorter than a tick still sends one held tick, and right-click cancels until the button is released. */
+  private tap = false;
+  private cancel = false;
+  private cancelHeld = false;
+  private bowHits = 0;
+  private bowHeads = 0;
+  private hitUntil = 0;
+  private bowHead = false;
+  private deadAt: number | null = null;
+  private wasBow = false;
   readonly network: Network;
   private pending: PlayerInput[] = [];
   private seq = 0;
@@ -52,7 +68,7 @@ export class Engine {
   private publishedHud: Hud | undefined;
   private publish(hud:Hud) { this.publishedHud=hud; this.onHud(hud); }
   private feedback() {
-    const headshot=this.hit && (this.network.snapshot ? !!this.network.snapshot.players.find(p=>p.id===this.network.id)?.headshot : this.practice.headshot);
+    const headshot=this.hit && (this.network.snapshot?.game === 'bow' ? this.bowHead : this.network.snapshot ? !!this.network.snapshot.players.find(p=>p.id===this.network.id)?.headshot : this.practice.headshot);
     if(this.publishedHud && (this.publishedHud.hit!==this.hit || this.publishedHud.headshot!==headshot || this.publishedHud.locked!==this.locked)) this.publish({...this.publishedHud,hit:this.hit,headshot,locked:this.locked});
   }
   private metrics = new FrameMetrics();
@@ -70,7 +86,7 @@ export class Engine {
   settings: Settings;
   constructor(private host: HTMLElement, settings: Settings, private onHud: (hud: Hud) => void, private onError: (message: string) => void, onRoom: (snapshot: Snapshot | null) => void, onQueue: (state: QueueState) => void = () => {}) {
     this.settings = settings;
-    this.network = new Network(state => { if (!state) { this.reset(); this.roomCode = ''; this.match = -1; this.pending = []; this.blur(); } onRoom(state); }, onError, this.acceptSnapshot, onQueue);
+    this.network = new Network(state => { if (!state) { this.reset(); this.roomCode = ''; this.match = -1; this.pending = []; this.blur(); this.bowView?.clear(); } onRoom(state); }, onError, this.acceptSnapshot, onQueue);
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     host.appendChild(this.renderer.domElement);
@@ -83,6 +99,9 @@ export class Engine {
     this.target = new THREE.Mesh(this.sphereGeometry,new THREE.MeshStandardMaterial({color:'#ff657e',roughness:0.8}));this.scene.add(this.target);
     this.scene.add(this.trainingModel);
     this.scene.add(this.healthBar.sprite);
+    this.scene.add(this.camera, this.archer.group); this.archer.group.visible = false;
+    this.bowView = new BowView(this.scene, this.camera, ARCHER_BODY);
+    this.renderer.domElement.addEventListener('contextmenu', this.noMenu);
     this.camera.rotation.order = 'YXZ';
     this.resizeObserver = new ResizeObserver(this.resize); this.resizeObserver.observe(host); this.resize();
     document.addEventListener('keydown', this.keydown); document.addEventListener('keyup', this.keyup);
@@ -104,15 +123,19 @@ export class Engine {
       if (this.modeRevision >= 0 && state.modeRevision !== this.modeRevision && this.locked) this.blur();
       this.roundSerial = state.roundSerial; this.modeRevision = state.modeRevision;
       this.match = state.match; this.roomCode = state.code; this.pending = []; this.yaw = me.yaw; this.pitch = me.pitch; this.keys.clear(); this.firing = false; this.jump = false;
+      this.bowView.reset(); this.bowHits = me.bow?.hits ?? 0; this.bowHeads = me.bow?.heads ?? 0;
     }
+    const bow = state.game === 'bow';
+    if (bow && (me.bow?.hits ?? 0) > this.bowHits) { this.hitUntil = performance.now() + 250; this.bowHead = (me.bow?.heads ?? 0) > this.bowHeads; }
+    this.bowHits = me.bow?.hits ?? 0; this.bowHeads = me.bow?.heads ?? 0;
     this.body = { ...me.body };
     this.pending = this.pending.filter(input => input.seq > me.ack);
-    if (!state.paused && (state.phase === 'live' || state.phase === 'suddenDeath')) for (const input of this.pending) move(this.body, input, CONFIG.tick, ARENA_SOLIDS, this.network.snapshot?.mode ?? 'standard');
+    if (!state.paused && (state.phase === 'live' || state.phase === 'suddenDeath')) for (const input of this.pending) move(this.body, input, CONFIG.tick, ARENA_SOLIDS, this.network.snapshot?.mode ?? 'standard', bow);
     else { this.pending = []; if (this.locked && state.phase === 'finished' && this.lastPhase !== 'finished') this.blur(); }
     this.lastPhase = state.phase;
     this.audio.observe({allowInitialSpawn:state.phase==='countdown',key:state.matchId ?? `${state.code}:${state.match}`,spawn:state.roundSerial,kills:me.kills??0,damage:me.damage,headDamage:me.matchStats?.headDamage??0});
     this.ownHp = me.hp; this.hp = state.players.find(p => p.id !== me.id)?.hp ?? CONFIG.hp;
-    this.hit = (state.phase === 'live' || state.phase === 'suddenDeath') && me.hit; this.tracked = me.trackingSeconds; this.totalDamage = me.damage;
+    this.hit = bow ? performance.now() < this.hitUntil : (state.phase === 'live' || state.phase === 'suddenDeath') && me.hit; this.tracked = me.trackingSeconds; this.totalDamage = me.damage;
   };
   async engage() {
     void this.audio.unlock();
@@ -140,15 +163,22 @@ export class Engine {
   /** Ctrl crouches, and outside fullscreen Ctrl+W would close the tab: ask before leaving mid-game. */
   private beforeUnload = (e: BeforeUnloadEvent) => { const phase = this.network.snapshot?.phase; if (this.locked || (phase && !['lobby', 'finished'].includes(phase))) { e.preventDefault(); e.returnValue = ''; } };
   private mouse = (e: MouseEvent) => { if (!this.locked) return; this.yaw -= e.movementX * this.settings.sensitivity; this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * this.settings.sensitivity * (this.settings.invert ? -1 : 1), -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01); };
-  private mouseDown = (e: MouseEvent) => { if (e.button === 0 && this.locked) this.firing = true; };
-  private mouseUp = (e: MouseEvent) => { if (e.button === 0) { this.firing = false; this.hit = false; this.feedback(); } };
+  private mouseDown = (e: MouseEvent) => {
+    if (!this.locked) return;
+    const bow = this.network.snapshot?.game === 'bow';
+    if (e.button === 0) { this.firing = true; this.tap = bow; } else if (e.button === 2 && bow) { this.cancel = true; this.cancelHeld = this.firing; }
+  };
+  private mouseUp = (e: MouseEvent) => { if (e.button === 0) { this.firing = false; this.cancelHeld = false; this.hit = false; this.feedback(); } };
+  private noMenu = (e: Event) => e.preventDefault();
   private lockChange = () => { this.keys.clear(); this.jump = false; this.firing = false; this.hit = false; this.accumulator = 0; this.feedback(); if (!this.locked) { this.pending = []; this.network.send(this.input(false)); } };
   private blur = () => { if (this.locked) document.exitPointerLock(); this.lockChange(); };
   private visibility = () => { if (document.hidden) this.blur(); };
   private contextLost = (event: Event) => { event.preventDefault();this.blur();this.onError('Graphics context lost. Reload the page to restore the arena.'); };
   private direction = new THREE.Vector3();
   private input(active: boolean): PlayerInput {
-    return { seq: ++this.seq, forward: active ? this.axis(this.settings.keys.forward, this.settings.keys.back) : 0, strafe: active ? this.axis(this.settings.keys.right, this.settings.keys.left) : 0, jump: active && this.jump, crouch: active && this.crouching, yaw: Math.atan2(Math.sin(this.yaw), Math.cos(this.yaw)), pitch: this.pitch, firing: active && this.firing, active, view: this.network.viewTick };
+    const input: PlayerInput = { seq: ++this.seq, forward: active ? this.axis(this.settings.keys.forward, this.settings.keys.back) : 0, strafe: active ? this.axis(this.settings.keys.right, this.settings.keys.left) : 0, jump: active && this.jump, crouch: active && this.crouching, yaw: Math.atan2(Math.sin(this.yaw), Math.cos(this.yaw)), pitch: this.pitch, firing: active && (this.firing || this.tap) && !this.cancelHeld, active, view: this.network.viewTick, cancel: active && this.cancel };
+    this.tap = false; this.cancel = false;
+    return input;
   }
   private loop = (now: number) => {
     if (this.disposed) return;
@@ -162,10 +192,13 @@ export class Engine {
     while (this.accumulator >= CONFIG.tick) {
       this.accumulator -= CONFIG.tick;
       if (this.network.snapshot) {
-        if(this.network.snapshotAge>=200 || this.network.snapshot.paused || !this.firing)this.hit=false;
+        const bow = this.network.snapshot.game === 'bow', mode = this.network.snapshot.mode;
+        if(!bow && (this.network.snapshotAge>=200 || this.network.snapshot.paused || !this.firing))this.hit=false;
         if (!this.network.snapshot.paused && (this.network.snapshot.phase === 'live' || this.network.snapshot.phase === 'suddenDeath')) {
           const input = this.input(this.locked && this.network.snapshotAge < 1000); this.jump = false;
-          move(this.body, input, CONFIG.tick, ARENA_SOLIDS, this.network.snapshot?.mode ?? 'standard');
+          move(this.body, input, CONFIG.tick, ARENA_SOLIDS, mode, bow);
+          const shot = bow ? this.bowView.step(input.firing, !!input.cancel, input.active) : null;
+          if (shot !== null) this.bowView.shoot({ x: this.body.x, y: this.body.y + eyeHeight(this.body, mode), z: this.body.z }, input.yaw, input.pitch, shot);
           this.pending.push(input); if (this.pending.length > 120) this.pending.shift();
           this.network.send(input);
         }
@@ -201,6 +234,11 @@ export class Engine {
     this.healthBar.sprite.visible = visible;
     this.healthBar.sprite.position.set(this.target.position.x, this.target.position.y + (online ? CONFIG.targetHeight * mode.scale * crouched : profile.height) / 2 + 0.5, this.target.position.z);
     this.healthBar.update(this.hp);
+    const bow = this.network.snapshot?.game === 'bow';
+    if (bow) this.bowFrame(now, elapsedFrame, remote);
+    else if (this.wasBow) { this.bowView.clear(); this.archer.group.visible = false; this.setFov(85); }
+    this.wasBow = bow;
+    if (bow) this.hit = now < this.hitUntil;
     this.feedback();
     this.audio.update();
     const render=this.gate.due(now,this.settings.frameCap);
@@ -208,13 +246,32 @@ export class Engine {
     this.cpuWork+=performance.now()-cpuStart;
     if(render){if(this.lastRender)this.metrics.record(now-this.lastRender,this.cpuWork);this.lastRender=now;this.cpuWork=0;}
     if(now-this.lastStats>=1000){this.stats=this.metrics.stats();this.lastStats=now;}
-    if (now - this.lastHud >= 100) { this.publish({ combat:{...(online ? this.network.snapshot?.players.find(p=>p.id===this.network.id)?.roundStats ?? emptyCombat() : this.practice.waveStats)}, lastWave:this.practice.lastWave, hp: this.hp, ownHp: this.ownHp, hit: this.hit, headshot: this.hit && (online ? !!this.network.snapshot?.players.find(p => p.id === this.network.id)?.headshot : this.practice.headshot), locked: this.locked, seconds: this.tracked, damage: this.totalDamage, fps: this.stats.averageMs ? 1000/this.stats.averageMs : 0, ping: this.network.ping, wave: this.practice.wave, kills: this.practice.kills, speed: profile.speed, size: profile.width / BOT_MODEL.width, circle: profile.circle, diagnostics:{...this.stats,skippedTicks:this.skippedTicks,serverSkippedTicks:this.network.snapshot?.serverMetrics?.skippedTicks??0,serverTickMs:this.network.snapshot?.serverMetrics?.tickMs??0,drawCalls:this.renderer.info.render.calls,snapshotAge:online?this.network.snapshotAge:0,connection:online?(this.network.snapshotAge>1000?'STALE — INPUT PAUSED':'CONNECTED'):'OFFLINE PRACTICE'} }); this.lastHud = now; }
+    if (now - this.lastHud >= 100) { this.publish({ air: bow ? { ready: 1 - (this.body.airCooldown ?? 0) / AIR.cooldown, seconds: this.body.airCooldown ?? 0 } : undefined, combat:{...(online ? this.network.snapshot?.players.find(p=>p.id===this.network.id)?.roundStats ?? emptyCombat() : this.practice.waveStats)}, lastWave:this.practice.lastWave, hp: this.hp, ownHp: this.ownHp, hit: this.hit, headshot: this.hit && (bow ? this.bowHead : online ? !!this.network.snapshot?.players.find(p => p.id === this.network.id)?.headshot : this.practice.headshot), locked: this.locked, seconds: this.tracked, damage: this.totalDamage, fps: this.stats.averageMs ? 1000/this.stats.averageMs : 0, ping: this.network.ping, wave: this.practice.wave, kills: this.practice.kills, speed: profile.speed, size: profile.width / BOT_MODEL.width, circle: profile.circle, diagnostics:{...this.stats,skippedTicks:this.skippedTicks,serverSkippedTicks:this.network.snapshot?.serverMetrics?.skippedTicks??0,serverTickMs:this.network.snapshot?.serverMetrics?.tickMs??0,drawCalls:this.renderer.info.render.calls,snapshotAge:online?this.network.snapshotAge:0,connection:online?(this.network.snapshotAge>1000?'STALE — INPUT PAUSED':'CONNECTED'):'OFFLINE PRACTICE'} }); this.lastHud = now; }
     this.frame = requestAnimationFrame(this.loop);
   };
+  private setFov(fov: number) { if (Math.abs(this.camera.fov - fov) > 1e-3) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); } }
+  /** Bow 1v1 frame: the opponent archer from the shared skeleton, your bow and arrows, and everyone else's arrows. */
+  private bowFrame(now: number, elapsed: number, remote: ReturnType<Network['remote']>) {
+    const snap = this.network.snapshot!, mine = snap.players.findIndex(p => p.id === this.network.id), me = snap.players[mine];
+    this.target.visible = false; this.trainingModel.visible = false;
+    const anchors = new Map<string, Anchor>();
+    let hit: ((p: { x: number; y: number; z: number }) => ReturnType<typeof partAt>) | undefined;
+    if (remote) {
+      const pose = poseOf(remote), body = skeleton(pose);
+      this.deadAt = remote.hp > 0 ? null : this.deadAt ?? now;
+      this.archer.group.visible = true; this.archer.update(body, pose, this.deadAt === null ? null : (now - this.deadAt) / 1000);
+      // Arrows in a falling archer would float where the body stood, so they go with it.
+      if (remote.hp > 0) { anchors.set(remote.id, pose); hit = p => partAt(body, p); }
+      this.healthBar.sprite.visible = remote.hp > 0; this.healthBar.sprite.position.set(body.head.x, body.head.y + 0.45, body.head.z);
+    } else this.archer.group.visible = false;
+    this.bowView.frame(elapsed, !!me && me.hp > 0 && snap.phase !== 'lobby', hit);
+    this.bowView.sync(snap.arrows, this.network.id ?? '', this.network.viewTick ?? snap.tick, anchors);
+    const e = Math.max(0, Math.min(1, this.bowView.charge)); this.setFov(85 - 5 * e * e * (3 - 2 * e));
+  }
   dispose() {
     this.audio.dispose(); this.disposed = true; cancelAnimationFrame(this.frame); if (this.locked) document.exitPointerLock(); this.resizeObserver.disconnect();
     document.removeEventListener('keydown', this.keydown); document.removeEventListener('keyup', this.keyup); document.removeEventListener('mousemove', this.mouse); document.removeEventListener('pointerlockchange', this.lockChange); window.removeEventListener('blur', this.blur); document.removeEventListener('visibilitychange', this.visibility); window.removeEventListener('beforeunload', this.beforeUnload);
-    document.removeEventListener('mousedown', this.mouseDown); document.removeEventListener('mouseup', this.mouseUp);
+    document.removeEventListener('mousedown', this.mouseDown); document.removeEventListener('mouseup', this.mouseUp); this.renderer.domElement.removeEventListener('contextmenu', this.noMenu);
     this.network.dispose(); this.healthBar.dispose();
     this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLost);
     this.scene.traverse(object => { if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) { object.geometry.dispose(); const materials = Array.isArray(object.material) ? object.material : [object.material]; materials.forEach(m => m.dispose()); } });

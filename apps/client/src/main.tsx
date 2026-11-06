@@ -4,7 +4,7 @@ import '@fontsource/barlow/latin-400.css';
 import '@fontsource/barlow/latin-500.css';
 import '@fontsource/barlow/latin-600.css';
 import '@fontsource/barlow/latin-700.css';
-import { CombatHud, RoundResults, PracticeResults } from './ui/CombatHud';
+import { CombatHud, RoundResults, PracticeResults, BowResults } from './ui/CombatHud';
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Engine, type Hud, type PracticeSummary } from './game/Engine';
@@ -28,7 +28,7 @@ import { HomeScreen, PauseMenu } from './ui/HomeScreen';
 import { PlayScreen } from './ui/PlayScreen';
 import { RoomScreen } from './ui/RoomScreen';
 import { Back } from './ui/icons';
-import type { QueueState, Snapshot } from '@trace/shared/protocol';
+import type { Difficulty, QueueState, Snapshot } from '@trace/shared/protocol';
 
 type Screen = 'home' | 'play' | 'settings' | 'account' | 'social' | 'leaderboard' | 'career';
 
@@ -69,9 +69,11 @@ function App() {
   const enter = () => { setError(''); void engine.current?.engage(); };
   const startPractice = () => { setPracticeSummary(null); setPracticeActive(true); setScreen('home'); enter(); };
   const openRoom = async (join?: string) => { setError(''); setBusy(true); await engine.current?.network.room(join, playerName); setBusy(false); };
+  const openPractice = async (difficulty: Difficulty) => { setError(''); setBusy(true); await engine.current?.network.practiceBow(difficulty, playerName); setBusy(false); };
   const me = room?.players.find(p => p.id === engine.current?.network.id);
   const opponent = room?.players.find(p => p.id !== me?.id);
-  const showResults=room?.resultStatus!=='cancelled' && !!room?.lastRound && (room.phase==='roundEnd' || (room.phase==='finished' && dismissedMatch!==room.matchId));
+  // Bow 1v1 has no between-kill summary: the 2-second respawn shows a centre message instead.
+  const showResults=room?.resultStatus!=='cancelled' && !!room?.lastRound && ((room.phase==='roundEnd' && room.game!=='bow') || (room.phase==='finished' && dismissedMatch!==room.matchId));
   const menuOpen = !hud.locked && !showResults && !practiceSummary;
   const overMatch = practiceActive || (!!room && !['lobby','finished'].includes(room.phase));
   const home = () => setScreen('home');
@@ -86,15 +88,15 @@ function App() {
   else if (practiceActive) view = <PauseMenu wave={hud.wave} kills={hud.kills} resume={enter} restart={() => { engine.current?.reset(); enter(); }} end={() => { const summary = engine.current?.endPractice(); if (summary) setPracticeSummary(summary); setPracticeActive(false); }} settings={() => setScreen('settings')} menu={() => setPracticeActive(false)}/>;
   else if (screen === 'play') view = <PlayScreen network={engine.current?.network} quickPlay={!!account.profile && !account.loading} signedIn={!!account.session} username={account.profile?.username_display} rank={progress.rank} xp={progress.xp} busy={busy}
     roomBlocked={queuing || busy || !engine.current || account.loading || (!!account.session && !account.profile)} playerName={playerName} setPlayerName={setPlayerName} code={code} setCode={setCode}
-    createRoom={() => void openRoom()} joinRoom={() => void openRoom(code)} practice={startPractice} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} back={home} openAccount={() => setScreen('account')}/>;
-  else view = <HomeScreen account={account} progress={progress} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} keys={settings.keys} play={() => setScreen('play')} practice={startPractice} privateRoom={() => setScreen('play')} settings={() => setScreen('settings')} openAccount={() => setScreen('account')} career={() => setScreen('career')}/>;
+    createRoom={() => void openRoom()} joinRoom={() => void openRoom(code)} bowPractice={difficulty => void openPractice(difficulty)} practice={startPractice} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} back={home} openAccount={() => setScreen('account')}/>;
+  else view = <HomeScreen account={account} progress={progress} practiceStarted={hud.damage > 0 || hud.wave > 1} wave={hud.wave} keys={settings.keys} play={() => setScreen('play')} practice={startPractice} privateRoom={() => setScreen('play')} bowPractice={() => setScreen('play')} settings={() => setScreen('settings')} openAccount={() => setScreen('account')} career={() => setScreen('career')}/>;
   return <><div ref={host} className="arena"/>
     {menuOpen ? <div className={`backdrop${overMatch ? ' over-match' : ''}`}>{screen === 'home' && !room && !queuing && !practiceActive && <svg aria-hidden="true" viewBox="0 0 1440 900" preserveAspectRatio="xMinYMin slice"><line x1="0" y1="330" x2="1440" y2="330" stroke="#14303d"/><line x1="460" y1="0" x2="460" y2="900" stroke="#14303d"/><circle cx="460" cy="330" r="236" fill="none" stroke="#e5212e" strokeOpacity="0.18" strokeWidth="1.5"/><circle cx="460" cy="330" r="300" fill="none" stroke="#14303d"/></svg>}</div> : <div className="vignette"/>}
     {(hud.locked || showResults) && <CombatHud hud={hud} room={room} ownId={me?.id} settings={settings}/>}
     {hud.locked && <Crosshair settings={settings}/>}{settings.diagnostics && <Diagnostics hud={hud}/>}
     {room?.paused && <div className="network-warning" role="status">{matchMessage(room)}</div>}
     {room && hud.diagnostics && hud.diagnostics.snapshotAge > 1000 && <div className="network-warning" role="status">Connection stalled - movement and firing paused</div>}
-    {room && showResults && <RoundResults room={room} ownId={me?.id} close={()=>setDismissedMatch(room.matchId??'')} rematch={()=>engine.current?.network.ready()}/>}
+    {room && showResults && (room.game==='bow' ? <BowResults room={room} ownId={me?.id} close={()=>setDismissedMatch(room.matchId??'')} rematch={()=>{engine.current?.network.ready(); if(room.practice)enter();}}/> : <RoundResults room={room} ownId={me?.id} close={()=>setDismissedMatch(room.matchId??'')} rematch={()=>engine.current?.network.ready()}/>)}
     {practiceSummary && <PracticeResults summary={practiceSummary} close={()=>setPracticeSummary(null)} again={startPractice}/>}
     {menuOpen && <><TopBar account={account} progress={progress} room={room} queuing={queuing} ping={hud.ping} fps={hud.fps} fullscreen={fullscreen} toggleFullscreen={() => void toggleFullscreen()} home={home} openAccount={() => setScreen('account')} openSettings={() => setScreen('settings')} openCareer={()=>setScreen('career')} openSocial={()=>setScreen('social')} openLeaderboard={()=>setScreen('leaderboard')} socialCount={social.count}/>
       <main className="screen">{view}</main></>}

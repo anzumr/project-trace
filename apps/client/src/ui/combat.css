@@ -6,7 +6,7 @@
 .health-head .hp{font:700 20px var(--display);white-space:nowrap}.health-head .hp small{font-size:13px;color:var(--muted)}.combat-health.self .health-head .hp{font-size:26px;line-height:1}.combat-health.self .health-head strong{font-size:12px;font-weight:600;letter-spacing:3px;color:var(--text-2)}
 .health-track{position:relative;height:12px;margin-top:8px;background:#ffffff14;overflow:hidden}.health-track i{position:absolute;left:0;top:0;height:100%;display:block}
 .health-fill{background:var(--accent);transition:width 80ms linear}.health-trail{background:#ffb0b5;transition:width 350ms ease}
-.self .health-fill{background:var(--text)}.self .health-trail{background:#ffffff55}.self.low .health-fill{background:var(--head)}.self.critical .health-fill{background:var(--accent)}
+.self .health-fill{background:#34c759}.self .health-trail{background:#34c75955}.self.low .health-fill{background:var(--head)}.self.critical .health-fill{background:var(--accent)}
 .hud-clock{display:flex;align-items:center;gap:20px;padding:6px 20px}.pips{display:flex;gap:5px}.pips i{width:10px;height:10px;border:1px solid var(--muted)}.pips i.won{background:var(--text);border-color:var(--text)}
 .clock{display:flex;flex-direction:column;align-items:center}.clock strong{font:700 30px/1.05 var(--display);white-space:nowrap}.clock small{font-size:11px;letter-spacing:2px;color:var(--muted);white-space:nowrap}
 .hud-chips{display:flex;gap:8px}.hud-chips span{padding:6px 12px;font-size:12px;font-weight:600;letter-spacing:1px}.hud-chips span:last-child{color:var(--text-2)}
@@ -36,3 +36,6 @@
 .results .final{display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:20px}.results .final p{margin:0;font-size:14px;color:var(--text-2)}.results .final .btn-primary{width:min(440px,100%)}
 .results .actions{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;width:100%;margin-top:20px}.results .actions .btn-primary{width:min(320px,100%)}
 @media(max-width:800px){.hud-stats{display:none}.wave-toast{right:12px;top:auto;bottom:120px}.results th,.results td{padding:8px 10px}}
+
+.combat-hud.bow .hud-bottom{left:24px;bottom:56px;transform:none;width:clamp(260px,24vw,360px)}
+.air-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:8px 14px;font-size:11px;font-weight:600;letter-spacing:2px;color:var(--text-2)}.air-track{display:block;width:180px;height:6px;background:rgba(255,255,255,.15)}.air-track i{display:block;height:100%;background:var(--text-2);transition:width .1s linear}.air-bar b{min-width:46px;text-align:right;color:var(--text)}.air-bar.ready .air-track i{background:#fff}.air-bar.ready b{color:var(--accent)}
