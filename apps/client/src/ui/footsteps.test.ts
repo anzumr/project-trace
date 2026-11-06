@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CONFIG } from '@trace/shared';
-import { STEPS, StepTracker, footstepSamples, type Feet, type StepEvent } from './footsteps';
+import { STEPS, StepTracker, clipSet, footstepSamples, type Feet, type StepEvent } from './footsteps';
 
 /** Moves along x at `speed` for `seconds`, sampling every tick, and collects the events. */
 function walk(tracker: StepTracker, speed: number, seconds: number, over: Partial<Feet> = {}, from = 0) {
@@ -33,13 +33,24 @@ test('crouching and walking are quieter; a respawn teleport is not a step', () =
   const tracker = new StepTracker(); tracker.update({ x: 0, y: 0, z: 0, grounded: true }, CONFIG.tick);
   assert.equal(tracker.update({ x: 20, y: 0, z: 0, grounded: true }, CONFIG.tick), null);
 });
-test('time in the air is silent, then a landing thud; a tiny hop does not thud', () => {
+test('a jump takes off, is silent in the air, then lands with a thud; a tiny hop does not thud', () => {
   const tracker = new StepTracker(), events: (StepEvent | null)[] = [];
-  for (let i = 0; i < 40; i++) events.push(tracker.update({ x: 5, y: 1, z: 0, grounded: i === 0 || i === 39 }, CONFIG.tick));
-  assert.deepEqual(events.filter(Boolean).map(e => e!.kind), ['land']);
+  for (let i = 0; i < 40; i++) events.push(tracker.update({ x: 5, y: i === 0 || i === 39 ? 0 : Math.min(i, 39 - i) * 0.1, z: 0, grounded: i === 0 || i === 39 }, CONFIG.tick));
+  assert.deepEqual(events.filter(Boolean).map(e => e!.kind), ['jump', 'land']);
   const hop = new StepTracker(); hop.update({ x: 0, y: 0, z: 0, grounded: true }, CONFIG.tick);
   for (let i = 0; i < 5; i++) hop.update({ x: 0, y: 0.2, z: 0, grounded: false }, CONFIG.tick);
   assert.equal(hop.update({ x: 0, y: 0, z: 0, grounded: true }, CONFIG.tick), null);
+});
+test('walking off a ledge is not a take-off; a Bow air jump is; running and walking pick different recordings', () => {
+  const ledge = new StepTracker(); ledge.update({ x: 0, y: 2, z: 0, grounded: true }, CONFIG.tick);
+  assert.equal(ledge.update({ x: 0.1, y: 1.9, z: 0, grounded: false }, CONFIG.tick), null);
+  const air = new StepTracker(); air.update({ x: 0, y: 1, z: 0, grounded: false, airReady: true }, CONFIG.tick);
+  assert.equal(air.update({ x: 0, y: 1.1, z: 0, grounded: false, airReady: true }, CONFIG.tick), null);
+  assert.equal(air.update({ x: 0.1, y: 1.2, z: 0, grounded: false, airReady: false }, CONFIG.tick)?.kind, 'jump');
+  assert.equal(air.update({ x: 0.2, y: 1.3, z: 0, grounded: false, airReady: false }, CONFIG.tick), null, 'once');
+  assert.equal(clipSet({ kind: 'step', loudness: 1, speed: CONFIG.speed }), 'run');
+  assert.equal(clipSet({ kind: 'step', loudness: 1, speed: CONFIG.speed * CONFIG.crouchSpeed }), 'walk');
+  assert.equal(clipSet({ kind: 'land', loudness: 1, speed: 7 }), 'land'); assert.equal(clipSet({ kind: 'jump', loudness: 1, speed: 7 }), 'jump');
 });
 test('synthesized steps are short, normalized, varied by seed and repeatable', () => {
   const a = footstepSamples(48000, 'step', 1), b = footstepSamples(48000, 'step', 2), land = footstepSamples(48000, 'land', 1);

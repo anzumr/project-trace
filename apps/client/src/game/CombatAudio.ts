@@ -1,6 +1,6 @@
 import type { Settings } from '../ui/settings';
 import { AudioEvents, type AudioCounters, type Sound } from '../ui/audio-events';
-import { footstepSamples } from '../ui/footsteps';
+import { CLIPS, clipFiles, clipSet, footstepSamples, type StepEvent } from '../ui/footsteps';
 import type { Vec3 } from '@trace/shared';
 const files:Record<Sound,string>={hit:'hitsound.ogg',headshot:'headshot.ogg',kill:'killconfirmed.ogg',spawn:'spawn.ogg',draw:'bow-draw.mp3',release:'bow-release.mp3'};
 const toggles:Partial<Record<Sound,'hitSound'|'headshotSound'|'killSound'|'spawnSound'>>={hit:'hitSound',headshot:'headshotSound',kill:'killSound',spawn:'spawnSound'};
@@ -14,6 +14,9 @@ export class CombatAudio {
   private loading:Promise<void>|undefined;
   private disposed=false;
   private steps:Record<'step'|'land',AudioBuffer[]>|undefined;
+  /** Recorded footsteps by set; until (or unless) they load, the synthesized `steps` play instead. */
+  private clips:Partial<Record<keyof typeof CLIPS,AudioBuffer[]>>={};
+  private clipLoad:Promise<void>|undefined;
   constructor(private settings:()=>Settings,private error:(message:string)=>void){}
   async unlock(){
     if(this.disposed)return;
@@ -21,6 +24,9 @@ export class CombatAudio {
       if(!this.context){this.context=new AudioContext();this.gain=this.context.createGain();this.gain.connect(this.context.destination);}
       const ctx=this.context,make=(kind:'step'|'land',seed:number)=>{const data=footstepSamples(ctx.sampleRate,kind,seed),b=ctx.createBuffer(1,data.length,ctx.sampleRate);b.copyToChannel(data,0);return b;};
       this.steps??={step:[1,2,3,4,5,6].map(s=>make('step',s)),land:[7,8].map(s=>make('land',s))};
+      this.clipLoad??=Promise.all((Object.keys(CLIPS) as (keyof typeof CLIPS)[]).map(async kind=>{
+        this.clips[kind]=await Promise.all(clipFiles(kind).map(async file=>{const response=await fetch(file);if(!response.ok)throw new Error('Footstep unavailable');return ctx.decodeAudioData(await response.arrayBuffer());}));
+      })).then(()=>{},()=>{this.clips={};});
       await this.context.resume();
       this.loading ??= Promise.all((Object.entries(files) as [Sound,string][]).map(async([kind,file])=>{
         const response=await fetch('/audio/'+file);if(!response.ok)throw new Error('Audio asset unavailable');
@@ -62,8 +68,8 @@ export class CombatAudio {
    * A footstep. `at` places an opponent's step in 3D around you (HRTF, so even ahead and behind differ) and it fades with
    * distance: full at 2.5 m, about a quarter at 10 m, a tenth across the arena. `null` is your own: quiet and centred.
    */
-  step(kind:'step'|'land',at:Vec3|null,loudness:number){
-    const ctx=this.context,pool=this.steps?.[kind];
+  step(event:StepEvent,at:Vec3|null){
+    const ctx=this.context,recorded=this.clips[clipSet(event)],pool=recorded?.length?recorded:event.kind==='jump'?undefined:this.steps?.[event.kind],loudness=event.loudness;
     if(!ctx || ctx.state!=='running' || !pool || this.settings().muteAll)return;
     this.update();
     const voice=ctx.createBufferSource(),level=ctx.createGain();voice.buffer=pool[Math.floor(Math.random()*pool.length)];voice.playbackRate.value=0.9+Math.random()*0.2;

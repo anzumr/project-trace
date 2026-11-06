@@ -12,6 +12,10 @@ try{
     const sound=await fetch(base+'/audio/'+name+'.ogg');assert.equal(sound.status,200);assert.equal(sound.headers.get('content-type'),'audio/ogg');
     assert.equal(Buffer.from(await sound.arrayBuffer()).subarray(0,4).toString(),'OggS');
   }
+  for(const name of ['metal-run-01','metal-walk-06','metal-land-03','metal-jump-01']){
+    const step=await fetch(base+'/audio/steps/'+name+'.wav');assert.equal(step.status,200);assert.equal(step.headers.get('content-type'),'audio/wav');
+    assert.equal(Buffer.from(await step.arrayBuffer()).subarray(0,4).toString(),'RIFF');
+  }
   for(const name of ['bow-draw','bow-release']){
     const sound=await fetch(base+'/audio/'+name+'.mp3');assert.equal(sound.status,200);assert.equal(sound.headers.get('content-type'),'audio/mpeg');
     const head=Buffer.from(await sound.arrayBuffer());assert.ok(head.subarray(0,3).toString()==='ID3' || (head[0]===0xff && (head[1]&0xe0)===0xe0),'MP3 frame or ID3 header');
@@ -22,5 +26,5 @@ try{
   assert.equal((await fetch(base,{method:'POST'})).status,405);
   for(let i=0;i<2;i++){const socket=io(base,{transports:['websocket'],reconnection:false,extraHeaders:{Origin:'http://localhost:3001'}});sockets.push(socket);await new Promise<void>((resolve,reject)=>{socket.once('connect',resolve);socket.once('connect_error',reject);});}
   const created=await sockets[0].timeout(2000).emitWithAck('create');const joined=await sockets[1].timeout(2000).emitWithAck('join',created.snapshot.code);assert.equal(joined.ok,true);assert.equal(joined.snapshot.players.length,2);
-  console.log('PASS: production HTML, robots and sitemap, brand images, four OGG and two MP3 sounds, compressed assets, CSP, traversal/method guards and two WebSocket clients.');
+  console.log('PASS: production HTML, robots and sitemap, brand images, four OGG and two MP3 sounds, recorded footsteps, compressed assets, CSP, traversal/method guards and two WebSocket clients.');
 }finally{sockets.forEach(s=>s.disconnect());await server.close();}

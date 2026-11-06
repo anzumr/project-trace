@@ -43,7 +43,7 @@ try {
   for (const p of pages) await engine(p, "(document.removeEventListener('mousemove', e.mouse), true)");
   // Record which sounds play, without changing what plays.
   await engine(a, '((play) => { window.__sounds = []; e.audio.play = (kind, now) => { window.__sounds.push(kind); return play(kind, now); }; return true; })(e.audio.play.bind(e.audio))');
-  await engine(a, '((step) => { window.__steps = []; e.audio.step = (kind, at, loudness) => { window.__steps.push({ kind, at, loudness }); return step(kind, at, loudness); }; return true; })(e.audio.step.bind(e.audio))');
+  await engine(a, '((step) => { window.__steps = []; e.audio.step = (event, at) => { window.__steps.push({ kind: event.kind, speed: event.speed, at, loudness: event.loudness }); return step(event, at); }; return true; })(e.audio.step.bind(e.audio))');
   const walk = async (p: Page, key: string, axis: 'x' | 'z', value: number, up: boolean, yaw: number) => {
     await engine(p, `(e.yaw = ${yaw}, e.pitch = 0, true)`); await p.keyboard.down(key);
     try { await until(async () => { const v = await engine<number>(p, `e.body.${axis}`); return up ? v >= value : v <= value; }, `walk ${key}`, 12000); } finally { await p.keyboard.up(key); }
@@ -56,6 +56,7 @@ try {
   const theirs = heard.filter(h => h.at), mine = heard.filter(h => !h.at), b0 = await engine<{ x: number; z: number }>(a, 'e.network.snapshot.players.find(p => p.id !== e.network.id).body');
   assert.ok(theirs.length >= 3 && mine.length >= 3, `steps heard: ${theirs.length} theirs, ${mine.length} mine`);
   assert.ok(Math.hypot(theirs.at(-1)!.at!.x - b0.x, theirs.at(-1)!.at!.z - b0.z) < 3, 'the last enemy step came from where the enemy is');
+  assert.deepEqual(await engine<number[]>(a, '["run", "walk", "land", "jump"].map(k => e.audio.clips[k]?.length ?? 0)'), [8, 6, 3, 3], 'the recorded metal footsteps decoded');
   const ears = await engine<{ left: number; right: number }>(a, `(async () => {
     const l = e.audio.context.listener, at = [l.positionX.value, l.positionY.value, l.positionZ.value], f = [l.forwardX.value, l.forwardY.value, l.forwardZ.value], u = [l.upX.value, l.upY.value, l.upZ.value];
     const right = [f[1] * u[2] - f[2] * u[1], f[2] * u[0] - f[0] * u[2], f[0] * u[1] - f[1] * u[0]], ctx = new OfflineAudioContext(2, 9600, 48000), L = ctx.listener;
