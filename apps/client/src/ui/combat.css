@@ -39,3 +39,5 @@
 
 .combat-hud.bow .hud-bottom{left:24px;bottom:56px;transform:none;width:clamp(260px,24vw,360px)}
 .air-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:8px 14px;font-size:11px;font-weight:600;letter-spacing:2px;color:var(--text-2)}.air-track{display:block;width:180px;height:6px;background:rgba(255,255,255,.15)}.air-track i{display:block;height:100%;background:var(--text-2);transition:width .1s linear}.air-bar b{min-width:46px;text-align:right;color:var(--text)}.air-bar.ready .air-track i{background:#fff}.air-bar.ready b{color:var(--accent)}
+.hurt-flash{position:fixed;inset:0;pointer-events:none;z-index:3;background:radial-gradient(ellipse at center,transparent 40%,rgba(229,33,46,.9) 100%);opacity:0;animation:hurt-flash .4s ease-out}
+@keyframes hurt-flash{from{opacity:var(--hurt)}to{opacity:0}}

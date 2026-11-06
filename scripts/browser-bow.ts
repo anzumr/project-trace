@@ -81,6 +81,8 @@ try {
   await a.mouse.up();
   await until(async () => await opponentHp() < 100, 'the body shot lands', 5000);
   assert.equal(await opponentHp(), 25, 'a full draw to the torso does 75');
+  await until(async () => await b.locator('.hurt-flash').count() > 0, 'the player who was hit sees the red flash', 3000);
+  await b.screenshot({ path: join(shots, 'bow-hurt-flash.png') });
   const audio = await engine<{ buffers: number; sounds: string[]; draw: number; release: number }>(a, '({ buffers: e.audio.buffers.size, sounds: window.__sounds, draw: e.audio.buffers.get("draw")?.duration, release: e.audio.buffers.get("release")?.duration })');
   assert.equal(audio.buffers, 6, 'all six sounds decoded, including the two bow MP3s');
   assert.deepEqual(audio.sounds.filter(k => k === 'draw' || k === 'release'), ['draw', 'release'], 'the draw creak, then the release');

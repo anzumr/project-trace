@@ -221,7 +221,7 @@ test('bow: a full draw to the torso does 75; release fires, the shot counts, and
   for (let i = 0; i < 20; i++) snap = tick();
   assert.equal(b.hp, 25); assert.equal(a.bow!.hits, 1); assert.equal(a.bow!.heads, 0); assert.equal(a.damage, 75);
   assert.equal(b.roundStats!.received, 75); assert.equal(a.matchStats!.damage, 75);
-  const arrow = snap.arrows![0]; assert.equal(arrow.on, 'b'); assert.equal(arrow.stuck, undefined); assert.ok(arrow.local && Math.abs(arrow.local[2] - 0.16) < 0.06, 'stuck in the front of the torso');
+  const arrow = snap.arrows![0]; assert.equal(arrow.on, 'b'); assert.equal(arrow.stuck, undefined); assert.ok(arrow.local && Math.abs(arrow.local[2] - (0.16 + 0.68 * BOW.margin)) < 0.06, 'stuck in the front of the torso');
   assert.equal(snap.game, 'bow');
 });
 test('bow: a headshot kills, the killer scores, and both respawn 2 s later on swapped sides without a countdown', () => {

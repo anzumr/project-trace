@@ -14,6 +14,8 @@ type Arrow = Flight & { id: number; owner: string; born: number; lag: number; ag
 const freshBow = (): BowState => ({ draw: 0, raise: 0, reload: 0, shots: 0, hits: 0, heads: 0 });
 /** Shots may rewind the target up to this far to match what the shooter saw (interpolation delay plus latency). */
 export const MAX_REWIND_TICKS = Math.round(0.3 / CONFIG.tick);
+/** Arrows fly for a while after the shot, so Bow 1v1 allows a longer rewind to cover higher pings. */
+export const BOW_REWIND_TICKS = Math.round(BOW.rewind / CONFIG.tick);
 type Participant = { opportunity: number; received: number; play: number; accountId?: string; state: PlayerState; queue: PlayerInput[]; input: PlayerInput; lastInput: number; lastSeq: number; packets: number; rateStart: number };
 export class Room {
   lastRound: RoundCombat | undefined;
@@ -231,7 +233,7 @@ export class Room {
     }
     if (this.game) this.drawBows(players);
     this.history.push({ tick: this.tick, bodies: new Map(players.map(p => [p.state.id, poseOf(p.state)])) });
-    if (this.history.length > MAX_REWIND_TICKS + 1) this.history.shift();
+    if (this.history.length > (this.game ? BOW_REWIND_TICKS : MAX_REWIND_TICKS) + 1) this.history.shift();
     if (this.game) { this.flyArrows(players); return; }
     // Evaluate both rays against the same tick before applying simultaneous damage.
     const hits = players.map((p, index) => {
@@ -278,7 +280,7 @@ export class Room {
       else if (b.draw > 0) {
         const eye = { x: s.body.x, y: s.body.y + eyeHeight(s.body, this.mode), z: s.body.z };
         // The arrow is tested against where the shooter saw the opponent: the same lag, every tick of its flight.
-        const lag = p.input.view === undefined ? 0 : Math.max(0, Math.min(MAX_REWIND_TICKS, Math.round(this.tick - p.input.view)));
+        const lag = p.input.view === undefined ? 0 : Math.max(0, Math.min(BOW_REWIND_TICKS, Math.round(this.tick - p.input.view)));
         this.arrows.push({ ...launch(eye, s.yaw, s.pitch, b.draw), id: ++this.arrowSeq, owner: s.id, born: this.tick, lag, age: 0 });
         b.draw = 0; b.reload = BOW.reload; b.shots++;
       }

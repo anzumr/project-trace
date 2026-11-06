@@ -4,8 +4,10 @@ import { CONFIG, ARENA, ARENA_SOLIDS, AIR, rayBox, stance, type Body, type Vec3 
  * Bow 1v1 rules. Damage scales with charge: 25 at a tap, 75 at full draw, ×2 head, ×0.6 arms and legs.
  * Flight: a tap leaves at 16 m/s under 20 m/s² and lobs like a grenade; a full draw leaves at 60 m/s, flies flat for its
  * first `flat` seconds (about 9 m), then gravity (18 m/s²) bites in over `ramp` seconds and curves it down (0.4 m by 25 m).
+ * `margin` is the arrow's hit radius: fatter than the drawn shaft, so an arrow that visibly grazes a body part counts,
+ * and the neck between head and torso is covered. `rewind` is how far back (s) a shot is tested against what the shooter saw.
  */
-export const BOW = { draw: 0.75, reload: 0.35, minSpeed: 16, maxSpeed: 60, lob: 20, fall: 18, flat: 0.15, ramp: 0.1, base: 25, bonus: 50, head: 2, limb: 0.6, kills: 5, respawn: 2, life: 3, stuck: 3, maxArrows: 24, margin: 0.012, ...AIR } as const;
+export const BOW = { draw: 0.75, reload: 0.35, minSpeed: 16, maxSpeed: 60, lob: 20, fall: 18, flat: 0.15, ramp: 0.1, base: 25, bonus: 50, head: 2, limb: 0.6, kills: 5, respawn: 2, life: 3, stuck: 3, maxArrows: 24, margin: 0.06, rewind: 0.4, ...AIR } as const;
 export type Part = 'head' | 'torso' | 'limb';
 const unit = (n: number) => Math.max(0, Math.min(1, n));
 export const arrowSpeed = (charge: number) => BOW.minSpeed + (BOW.maxSpeed - BOW.minSpeed) * unit(charge);

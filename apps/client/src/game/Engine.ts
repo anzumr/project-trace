@@ -18,7 +18,8 @@ import { normalizeKey, type Settings } from '../ui/settings';
 export type { Settings } from '../ui/settings';
 export type PracticeSummary = { duration:number; stats:CombatStats; waves:number; average:number|null; best:number|null; worst:number|null };
 /** `air` is the Bow 1v1 air jump: `ready` fills 0→1 over the cooldown, `seconds` is what is left of it. */
-export type Hud = { air?: { ready: number; seconds: number }; combat?:CombatStats; lastWave?:{wave:number;stats:CombatStats}|null;  hp: number; ownHp: number; hit: boolean; headshot: boolean; locked: boolean; seconds: number; damage: number; fps: number; ping: number; wave: number; kills: number; speed: number; size: number; circle: boolean; diagnostics?: FrameStats & { skippedTicks:number; serverSkippedTicks:number; serverTickMs:number; drawCalls:number; snapshotAge:number; connection:string } };
+/** `hurt` counts Bow 1v1 hits you have taken (and how hard the last was), to flash the screen. */
+export type Hud = { hurt?: { serial: number; amount: number }; air?: { ready: number; seconds: number }; combat?:CombatStats; lastWave?:{wave:number;stats:CombatStats}|null;  hp: number; ownHp: number; hit: boolean; headshot: boolean; locked: boolean; seconds: number; damage: number; fps: number; ping: number; wave: number; kills: number; speed: number; size: number; circle: boolean; diagnostics?: FrameStats & { skippedTicks:number; serverSkippedTicks:number; serverTickMs:number; drawCalls:number; snapshotAge:number; connection:string } };
 export class Engine {
   private audio = new CombatAudio(()=>this.settings,message=>this.onError(message));
   private practiceSession = 0;
@@ -44,6 +45,7 @@ export class Engine {
   private hitUntil = 0;
   private bowHead = false;
   private deadAt: number | null = null;
+  private hurt = { serial: 0, amount: 0 };
   private wasBow = false;
   /** Footsteps: yours (quiet, centred) and the opponent's (placed in 3D so you can hear where they are). */
   private ownSteps = new StepTracker();
@@ -139,6 +141,8 @@ export class Engine {
     else { this.pending = []; if (this.locked && state.phase === 'finished' && this.lastPhase !== 'finished') this.blur(); }
     this.lastPhase = state.phase;
     this.audio.observe({allowInitialSpawn:state.phase==='countdown',key:state.matchId ?? `${state.code}:${state.match}`,spawn:state.roundSerial,kills:me.kills??0,damage:me.damage,headDamage:me.matchStats?.headDamage??0});
+    // A hit you take flashes the screen straight away, without waiting for the next HUD update.
+    if (bow && me.hp < this.ownHp && state.roundSerial === this.roundSerial) { this.hurt = { serial: this.hurt.serial + 1, amount: this.ownHp - me.hp }; if (this.publishedHud) this.publish({ ...this.publishedHud, hurt: this.hurt }); }
     this.ownHp = me.hp; this.hp = state.players.find(p => p.id !== me.id)?.hp ?? CONFIG.hp;
     this.hit = bow ? performance.now() < this.hitUntil : (state.phase === 'live' || state.phase === 'suddenDeath') && me.hit; this.tracked = me.trackingSeconds; this.totalDamage = me.damage;
   };
@@ -261,7 +265,7 @@ export class Engine {
     this.cpuWork+=performance.now()-cpuStart;
     if(render){if(this.lastRender)this.metrics.record(now-this.lastRender,this.cpuWork);this.lastRender=now;this.cpuWork=0;}
     if(now-this.lastStats>=1000){this.stats=this.metrics.stats();this.lastStats=now;}
-    if (now - this.lastHud >= 100) { this.publish({ air: bow ? { ready: 1 - (this.body.airCooldown ?? 0) / AIR.cooldown, seconds: this.body.airCooldown ?? 0 } : undefined, combat:{...(online ? this.network.snapshot?.players.find(p=>p.id===this.network.id)?.roundStats ?? emptyCombat() : this.practice.waveStats)}, lastWave:this.practice.lastWave, hp: this.hp, ownHp: this.ownHp, hit: this.hit, headshot: this.hit && (bow ? this.bowHead : online ? !!this.network.snapshot?.players.find(p => p.id === this.network.id)?.headshot : this.practice.headshot), locked: this.locked, seconds: this.tracked, damage: this.totalDamage, fps: this.stats.averageMs ? 1000/this.stats.averageMs : 0, ping: this.network.ping, wave: this.practice.wave, kills: this.practice.kills, speed: profile.speed, size: profile.width / BOT_MODEL.width, circle: profile.circle, diagnostics:{...this.stats,skippedTicks:this.skippedTicks,serverSkippedTicks:this.network.snapshot?.serverMetrics?.skippedTicks??0,serverTickMs:this.network.snapshot?.serverMetrics?.tickMs??0,drawCalls:this.renderer.info.render.calls,snapshotAge:online?this.network.snapshotAge:0,connection:online?(this.network.snapshotAge>1000?'STALE — INPUT PAUSED':'CONNECTED'):'OFFLINE PRACTICE'} }); this.lastHud = now; }
+    if (now - this.lastHud >= 100) { this.publish({ hurt: this.hurt, air: bow ? { ready: 1 - (this.body.airCooldown ?? 0) / AIR.cooldown, seconds: this.body.airCooldown ?? 0 } : undefined, combat:{...(online ? this.network.snapshot?.players.find(p=>p.id===this.network.id)?.roundStats ?? emptyCombat() : this.practice.waveStats)}, lastWave:this.practice.lastWave, hp: this.hp, ownHp: this.ownHp, hit: this.hit, headshot: this.hit && (bow ? this.bowHead : online ? !!this.network.snapshot?.players.find(p => p.id === this.network.id)?.headshot : this.practice.headshot), locked: this.locked, seconds: this.tracked, damage: this.totalDamage, fps: this.stats.averageMs ? 1000/this.stats.averageMs : 0, ping: this.network.ping, wave: this.practice.wave, kills: this.practice.kills, speed: profile.speed, size: profile.width / BOT_MODEL.width, circle: profile.circle, diagnostics:{...this.stats,skippedTicks:this.skippedTicks,serverSkippedTicks:this.network.snapshot?.serverMetrics?.skippedTicks??0,serverTickMs:this.network.snapshot?.serverMetrics?.tickMs??0,drawCalls:this.renderer.info.render.calls,snapshotAge:online?this.network.snapshotAge:0,connection:online?(this.network.snapshotAge>1000?'STALE — INPUT PAUSED':'CONNECTED'):'OFFLINE PRACTICE'} }); this.lastHud = now; }
     this.frame = requestAnimationFrame(this.loop);
   };
   private footstep(event: ReturnType<StepTracker['update']>, at: { x: number; y: number; z: number } | null) { if (event) this.audio.step(event, at); }

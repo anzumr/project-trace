@@ -22,8 +22,10 @@ test('hits land only on the visible body: head, round torso, arms and legs, neve
   const knee = k.legs[0][1]; assert.equal(partAt(k, knee), 'limb');
   const hand = k.arms[1][2]; assert.equal(partAt(k, hand), 'limb');
   // Facing −z at yaw 0: the depth is the narrow axis.
-  assert.equal(partAt(k, { x: 0, y: 1.3, z: 0.2 }), null); assert.equal(partAt(k, { x: 0.2, y: 1.3, z: 0 }), 'torso');
-  const turned = skeleton(pose({ yaw: Math.PI / 2 })); assert.equal(partAt(turned, { x: 0.2, y: 1.3, z: 0 }), null); assert.equal(partAt(turned, { x: 0, y: 1.3, z: 0.2 }), 'torso');
+  assert.equal(partAt(k, { x: 0, y: 1.3, z: 0.25 }), null); assert.equal(partAt(k, { x: 0.25, y: 1.3, z: 0 }), 'torso');
+  const turned = skeleton(pose({ yaw: Math.PI / 2 })); assert.equal(partAt(turned, { x: 0.25, y: 1.3, z: 0 }), null); assert.equal(partAt(turned, { x: 0, y: 1.3, z: 0.25 }), 'torso');
+  assert.equal(partAt(k, { x: 0, y: 1.455, z: 0.05 }), 'head', 'the neck gap is covered');
+  assert.equal(partAt(k, { x: 0.3, y: 1.62, z: 0 }), null, 'but not a wide miss beside the head');
 });
 
 test('crouching lowers the whole body; raising the bow puts the left hand forward along the aim', () => {
@@ -66,7 +68,7 @@ test('arrows stop at walls, the floor and the pillar, and report the first body 
   assert.equal(arenaHit({ x: 0, y: 7, z: 4 }, { x: 20, y: 0, z: 0 }), null, 'over the wall top');
   const target = skeleton(pose({ x: 5, z: -6 })), shot = launch(eye, 0, Math.atan2(1.2 - 1.6 + arrowDrop(1, 12 / 60).drop, 12), 1); hit = null;
   for (let i = 0; i < 20 && !hit; i++) hit = flyArrow(shot, CONFIG.tick, p => partAt(target, p));
-  assert.equal(hit?.part, 'torso'); assert.ok(Math.abs(shot.z - (-6 + 0.157)) < 0.05, 'stops at the front of the torso');
+  assert.equal(hit?.part, 'torso'); assert.ok(Math.abs(shot.z - (-6 + 0.157 + 0.68 * BOW.margin)) < 0.05, 'stops at the front of the torso, padded by the arrow radius');
 });
 
 test('air jump: one per jump, dashes where you steer, recharges on landing but not within 4 seconds; drawing slows you', () => {
